@@ -3,5 +3,5 @@
   "description": "Transform any browser into a voice-activated satellite for Home Assistant's Assist with wake word detection",
   "render_readme": true,
   "filename": "voice-satellite-card.js",
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2026.1.3"
 }
