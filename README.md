@@ -30,11 +30,11 @@ Perfect for wall-mounted tablets, kiosk displays, or any browser-based Home Assi
 2. **The page is served over HTTPS** - Required for microphone access in modern browsers.
 3. **The screen stays on** - If the device screen turns off completely, the microphone will stop working. Use a screensaver instead of screen-off to keep the mic active.
 
-For kiosk setups like Fully Kiosk Browser, make sure to enable microphone permissions and use the screensaver feature (not screen off) to keep the microphone active while dimming the display.
+For kiosk setups like [Fully Kiosk Browser](https://play.google.com/store/apps/details?id=de.ozerov.fully), make sure to enable microphone permissions and use the screensaver feature (not screen off) to keep the microphone active while dimming the display.
 
 ## Features
 
-- **Wake Word Detection** - Uses Home Assistant's already configured wake word detection (like wyoming openWakeWord) for server-side processing.
+- **Wake Word Detection** - Uses Home Assistant's already configured wake word detection (like Wyoming openWakeWord) for server-side processing.
 - **Works Across Views** - Pipeline stays active when switching dashboard views.
 - **Auto-Start** - Automatically begins listening on page load (with fallback button).
 - **Visual Feedback** - Customizable rainbow gradient bar shows listening/processing/speaking states.
@@ -44,13 +44,11 @@ For kiosk setups like Fully Kiosk Browser, make sure to enable microphone permis
 
 ## Prerequisites
 
-Before using this card, ensure you have:
-
-1. **Home Assistant** with the **Assist Pipeline** fully set up. A configured Assist Pipeline consists of:
-   - Wake word detection (openWakeWord)
-   - Speech-to-Text (Whisper, OpenAI, etc.)
-   - Conversation agent (Home Assistant, OpenAI, Qwen, etc.)
-   - Text-to-Speech (Piper, Kokoro, etc.)
+Before using this card, ensure you have Home Assistant with the [Assist Pipeline](https://www.home-assistant.io/voice_control/voice_remote_local_assistant/) fully set up. A configured Assist Pipeline consists of:
+   - Wake word detection ([openWakeWord](https://www.home-assistant.io/voice_control/install_wake_word_add_on/))
+   - Speech-to-Text ([Whisper](https://www.home-assistant.io/integrations/whisper/), OpenAI, etc.)
+   - Conversation agent ([Home Assistant](https://www.home-assistant.io/integrations/conversation/), OpenAI, Qwen, etc.)
+   - Text-to-Speech ([Piper](https://www.home-assistant.io/integrations/piper/), Kokoro, etc.)
 
 ## Installation
 
