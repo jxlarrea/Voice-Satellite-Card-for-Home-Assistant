@@ -5,7 +5,7 @@ Transform any browser into a voice-activated satellite for Home Assistant's Assi
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
 [![version](https://shields.io/github/v/release/jxlarrea/Voice-Satellite-Card-for-Home-Assistant?style=for-the-badge)](https://github.com/jxlarrea/Voice-Satellite-Card-for-Home-Assistant/releases)
 
-![screenshot1](https://github.com/user-attachments/assets/32e34e0b-ce27-4e12-8efe-7b4d8500ed25)
+![Screenshot](https://github.com/user-attachments/assets/2deb9d20-2321-4a38-876b-802b2eae1cd2)
 
 ## Why This Card?
 
