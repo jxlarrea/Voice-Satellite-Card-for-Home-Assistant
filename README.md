@@ -60,7 +60,7 @@ Before using this card, ensure you have:
 
 1. Open HACS in Home Assistant
 2. Click the three dots menu, then Custom repositories
-3. Add this repository URL and select Lovelace as the category
+3. Add this repository URL and select Dashboard as the category
 4. Click Install
 5. Refresh your browser
 
