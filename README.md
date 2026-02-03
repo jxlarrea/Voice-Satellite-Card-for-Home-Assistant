@@ -175,12 +175,6 @@ When the wake word is detected, this switch will be turned OFF, which exits the 
 
 This is intentional. The card itself is invisible and only shows the gradient bar and transcription bubble when active. Add it to any view and it will work in the background.
 
-## Technical Details
-
-- **Audio Format**: 16kHz, mono, 16-bit PCM
-- **Communication**: WebSocket binary streaming to Home Assistant
-- **Browser Support**: Chrome, Firefox, Safari, Edge (modern versions)
-
 ## Contributing
 
 Contributions are welcome. Please feel free to submit issues or pull requests.
