@@ -8,7 +8,7 @@
  * - Intent processing  
  * - Text-to-speech response
  * 
- * @version 1.6.0
+ * @version 1.7.0
  * 
  * Features:
  * - AudioWorklet for efficient audio processing (falls back to ScriptProcessor)
@@ -63,6 +63,12 @@ class AudioProcessor extends AudioWorkletProcessor {\
 }\
 registerProcessor("audio-processor", AudioProcessor);';
 
+// Global flag to track if connection listeners are registered
+var _vsConnectionListenersRegistered = false;
+
+// Global mutex to prevent multiple pipelines starting
+var _vsPipelineStarting = false;
+
 class VoiceSatelliteCard extends HTMLElement {
   constructor() {
     super();
@@ -92,10 +98,12 @@ class VoiceSatelliteCard extends HTMLElement {
     this._isPaused = false;
     this._isConnected = false;
     this._isSpeaking = false;
+    this._isRestarting = false;
     this._reconnectAttempts = 0;
     this._reconnectTimeout = null;
     this._pipelineTimeoutId = null;
     this._errorHandlingRestart = false;
+    this._streamingResponse = '';
     
     // Bind visibility handler
     this._boundVisibilityHandler = this._handleVisibilityChange.bind(this);
@@ -163,6 +171,7 @@ class VoiceSatelliteCard extends HTMLElement {
       transcription_border_color: config.transcription_border_color || 'rgba(0, 180, 255, 0.5)',
       // Response bubble options (assistant speech)
       show_response: config.show_response !== false,
+      streaming_response: config.streaming_response || false,
       response_font_size: config.response_font_size !== undefined ? config.response_font_size : 20,
       response_font_family: config.response_font_family || 'inherit',
       response_font_color: config.response_font_color || '#444444',
@@ -182,10 +191,69 @@ class VoiceSatelliteCard extends HTMLElement {
 
   set hass(hass) {
     var firstSet = !this._hass;
+    var self = this;
     this._hass = hass;
     
+    // Monitor connection state changes (only register once globally)
+    if (firstSet && hass && hass.connection && !_vsConnectionListenersRegistered) {
+      // Try to subscribe to connection state changes
+      try {
+        // Home Assistant connection uses addEventListener
+        if (typeof hass.connection.addEventListener === 'function') {
+          // Track if we've had an initial connection
+          var hadInitialConnection = false;
+          
+          hass.connection.addEventListener('ready', function() {
+            console.log('[VoiceSatellite] Connection ready event, hadInitialConnection:', hadInitialConnection);
+            
+            // Skip the first ready event (initial page load)
+            if (!hadInitialConnection) {
+              hadInitialConnection = true;
+              console.log('[VoiceSatellite] Initial connection, skipping restart');
+              return;
+            }
+            
+            // This is a reconnect - clear stale handler ID
+            if (self._binaryHandlerId) {
+              console.log('[VoiceSatellite] Clearing stale binary handler after reconnect');
+              self._binaryHandlerId = null;
+            }
+            // Restart pipeline if we were streaming
+            if (self._isStreaming) {
+              console.log('[VoiceSatellite] Restarting pipeline after reconnect');
+              self._restartPipeline();
+            }
+          });
+          
+          hass.connection.addEventListener('disconnected', function() {
+            console.log('[VoiceSatellite] Connection disconnected event');
+            // Mark that we've had a connection (so next ready is a reconnect)
+            hadInitialConnection = true;
+            // Immediately invalidate the handler to stop sending
+            self._binaryHandlerId = null;
+            // Unsubscribe from pipeline to clean up server-side tasks
+            if (self._unsub) {
+              console.log('[VoiceSatellite] Unsubscribing pipeline on disconnect');
+              try { 
+                self._unsub(); 
+              } catch(e) {
+                // Connection is already closed, this is expected
+              }
+              self._unsub = null;
+            }
+          });
+          
+          _vsConnectionListenersRegistered = true;
+          console.log('[VoiceSatellite] Connection event listeners registered');
+        } else {
+          console.log('[VoiceSatellite] Connection addEventListener not available');
+        }
+      } catch (e) {
+        console.error('[VoiceSatellite] Error registering connection listeners:', e);
+      }
+    }
+    
     if (firstSet && hass && this._config.start_listening_on_load) {
-      var self = this;
       setTimeout(function() { self._tryAutoStart(); }, 1000);
     }
   }
@@ -199,7 +267,7 @@ class VoiceSatelliteCard extends HTMLElement {
     }
     
     try {
-      await this._startPipeline();
+      await this._startPipeline('_tryAutoStart');
       this._hideStartButton();
     } catch (error) {
       console.log('[VoiceSatellite] Auto-start failed:', error.message);
@@ -226,54 +294,95 @@ class VoiceSatelliteCard extends HTMLElement {
   async _handleStartClick() {
     this._hideStartButton();
     try {
-      await this._startPipeline();
+      await this._startPipeline('_handleStartClick');
     } catch (error) {
       console.error('[VoiceSatellite] Start failed:', error);
       this._showStartButton();
     }
   }
 
-  async _startPipeline() {
-    if (this._isStreaming) return;
+  async _startPipeline(caller) {
+    // Log who's calling
+    console.log('[VoiceSatellite] _startPipeline called by:', caller || 'unknown');
+    
+    // Check global mutex first
+    if (_vsPipelineStarting) {
+      console.log('[VoiceSatellite] Pipeline already starting globally, skipping');
+      return;
+    }
+    
+    if (this._isStreaming) {
+      console.log('[VoiceSatellite] Already streaming, skipping _startPipeline');
+      return;
+    }
     var self = this;
+    
+    // Set both flags immediately to prevent race conditions
+    _vsPipelineStarting = true;
+    this._isStreaming = true;
+    
+    // Clear any pending reconnect timeout
+    if (this._reconnectTimeout) {
+      clearTimeout(this._reconnectTimeout);
+      this._reconnectTimeout = null;
+    }
     
     this._setState(State.CONNECTING);
     this._reconnectAttempts = 0;
     
-    // Start microphone first (needs user gesture context)
-    await this._startMicrophone();
-    
-    // Add visibility listener
-    document.addEventListener('visibilitychange', this._boundVisibilityHandler);
-    
-    var pipelinesResult = await this._hass.connection.sendMessagePromise({
-      type: 'assist_pipeline/pipeline/list'
-    });
-    
-    if (this._config.debug) {
-      console.log('[VoiceSatellite] Available pipelines:', pipelinesResult);
+    try {
+      // Start microphone first (needs user gesture context)
+      await this._startMicrophone();
+      
+      // Add visibility listener
+      document.addEventListener('visibilitychange', this._boundVisibilityHandler);
+      
+      var pipelinesResult = await this._hass.connection.sendMessagePromise({
+        type: 'assist_pipeline/pipeline/list'
+      });
+      
+      if (this._config.debug) {
+        console.log('[VoiceSatellite] Available pipelines:', pipelinesResult);
+      }
+      
+      var pipelineId = this._config.pipeline_id;
+      if (!pipelineId && pipelinesResult && pipelinesResult.pipelines) {
+        pipelineId = pipelinesResult.preferred_pipeline || 
+                     (pipelinesResult.pipelines[0] ? pipelinesResult.pipelines[0].id : null);
+      }
+      
+      if (!pipelineId) {
+        throw new Error('No pipeline available');
+      }
+      
+      console.log('[VoiceSatellite] Using pipeline:', pipelineId);
+      
+      this._pipelineId = pipelineId;
+      
+      await this._subscribeToPipeline(pipelineId);
+    } catch (e) {
+      // If startup fails, reset the flag
+      this._isStreaming = false;
+      throw e;
+    } finally {
+      _vsPipelineStarting = false;
     }
-    
-    var pipelineId = this._config.pipeline_id;
-    if (!pipelineId && pipelinesResult && pipelinesResult.pipelines) {
-      pipelineId = pipelinesResult.preferred_pipeline || 
-                   (pipelinesResult.pipelines[0] ? pipelinesResult.pipelines[0].id : null);
-    }
-    
-    if (!pipelineId) {
-      throw new Error('No pipeline available');
-    }
-    
-    console.log('[VoiceSatellite] Using pipeline:', pipelineId);
-    
-    this._isStreaming = true;
-    this._pipelineId = pipelineId;
-    
-    await this._subscribeToPipeline(pipelineId);
   }
 
   async _subscribeToPipeline(pipelineId) {
     var self = this;
+    
+    // Always unsubscribe from existing pipeline first to prevent leaks
+    if (this._unsub) {
+      console.log('[VoiceSatellite] Unsubscribing from previous pipeline');
+      try { 
+        this._unsub(); 
+        console.log('[VoiceSatellite] Successfully unsubscribed from previous pipeline');
+      } catch(e) {
+        console.log('[VoiceSatellite] Error unsubscribing from previous pipeline:', e);
+      }
+      this._unsub = null;
+    }
     
     var pipelineOptions = {
       type: 'assist_pipeline/run',
@@ -433,6 +542,13 @@ class VoiceSatelliteCard extends HTMLElement {
   _sendAudioBuffer() {
     if (!this._binaryHandlerId || this._audioChunks.length === 0 || this._isPaused) return;
     
+    // Check if connection is still valid
+    if (!this._hass || !this._hass.connection || !this._hass.connection.connected) {
+      // Connection lost - clear handler and stop sending
+      this._binaryHandlerId = null;
+      return;
+    }
+    
     // Calculate total length
     var totalLength = 0;
     for (var i = 0; i < this._audioChunks.length; i++) {
@@ -464,9 +580,13 @@ class VoiceSatelliteCard extends HTMLElement {
       var socket = this._hass.connection.socket;
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(this._reusableMessageBuffer.buffer);
+      } else {
+        // Socket not ready - clear handler
+        this._binaryHandlerId = null;
       }
     } catch (e) {
       console.error('[VoiceSatellite] Error sending audio:', e);
+      this._binaryHandlerId = null;
     }
   }
 
@@ -542,6 +662,16 @@ class VoiceSatelliteCard extends HTMLElement {
         
       case 'intent-start':
         this._setState(State.INTENT);
+        // Reset streaming response buffer
+        this._streamingResponse = '';
+        break;
+      
+      case 'intent-progress':
+        // Stream response text in real-time (requires cloud models)
+        if (this._config.streaming_response && eventData.chat_log_delta && eventData.chat_log_delta.content) {
+          this._streamingResponse = (this._streamingResponse || '') + eventData.chat_log_delta.content;
+          this._showResponse(this._streamingResponse);
+        }
         break;
         
       case 'intent-end':
@@ -550,9 +680,12 @@ class VoiceSatelliteCard extends HTMLElement {
           if (response.speech && response.speech.plain) {
             var responseText = response.speech.plain.speech;
             console.log('[VoiceSatellite] Response:', responseText);
+            // Show final response (in case streaming missed anything)
             this._showResponse(responseText);
           }
         }
+        // Clear streaming buffer
+        this._streamingResponse = '';
         break;
         
       case 'tts-start':
@@ -664,19 +797,29 @@ class VoiceSatelliteCard extends HTMLElement {
   async _restartPipeline() {
     var self = this;
     
+    // Prevent concurrent restarts
+    if (this._isRestarting) {
+      console.log('[VoiceSatellite] Already restarting, skipping');
+      return;
+    }
+    
+    // Clear any pending reconnect timeout to prevent double restarts
+    if (this._reconnectTimeout) {
+      clearTimeout(this._reconnectTimeout);
+      this._reconnectTimeout = null;
+    }
+    
+    this._isRestarting = true;
     console.log('[VoiceSatellite] Restarting pipeline...');
     this._binaryHandlerId = null;
     
     try {
-      if (this._unsub) {
-        try { this._unsub(); } catch(e) {}
-      }
-      
       await this._subscribeToPipeline(this._pipelineId);
-      
     } catch (error) {
       console.error('[VoiceSatellite] Failed to restart pipeline:', error);
       this._handlePipelineError();
+    } finally {
+      this._isRestarting = false;
     }
   }
 
@@ -1561,6 +1704,10 @@ class VoiceSatelliteCardEditor extends HTMLElement {
         '<input type="checkbox" id="show_response"' + (this._config.show_response !== false ? ' checked' : '') + '>' +
         '<label for="show_response">Show response bubble (assistant speech)</label>' +
       '</div>' +
+      '<div class="row checkbox-row">' +
+        '<input type="checkbox" id="streaming_response"' + (this._config.streaming_response ? ' checked' : '') + '>' +
+        '<label for="streaming_response">Stream response in real-time (requires cloud conversation agent)</label>' +
+      '</div>' +
       '<div class="row">' +
         '<label>Response Font Size (px)</label>' +
         '<input type="number" id="response_font_size" value="' + (this._config.response_font_size || 20) + '" min="10" max="60">' +
@@ -1617,7 +1764,7 @@ class VoiceSatelliteCardEditor extends HTMLElement {
                   'show_transcription', 'transcription_font_size', 'transcription_font_family', 'transcription_font_color', 
                   'transcription_font_bold', 'transcription_font_italic',
                   'transcription_background', 'transcription_border_color', 'transcription_padding', 'transcription_rounded',
-                  'show_response', 'response_font_size', 'response_font_family', 'response_font_color',
+                  'show_response', 'streaming_response', 'response_font_size', 'response_font_family', 'response_font_color',
                   'response_font_bold', 'response_font_italic',
                   'response_background', 'response_border_color', 'response_padding', 'response_rounded',
                   'background_blur', 'background_blur_intensity'];
@@ -1672,7 +1819,7 @@ window.customCards.push({
 });
 
 console.info(
-  '%c VOICE-SATELLITE-CARD %c v1.6.0 ',
+  '%c VOICE-SATELLITE-CARD %c v1.7.0 ',
   'color: white; background: #4CAF50; font-weight: bold; padding: 2px 6px; border-radius: 4px 0 0 4px;',
   'color: #4CAF50; background: white; font-weight: bold; padding: 2px 6px; border-radius: 0 4px 4px 0; border: 1px solid #4CAF50;'
 );
