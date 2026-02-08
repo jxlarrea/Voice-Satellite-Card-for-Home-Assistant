@@ -100,7 +100,7 @@ debug: false                       # Show debug info in browser console
 # Microphone Processing
 noise_suppression: true            # Enable noise suppression
 echo_cancellation: true            # Enable echo cancellation
-mic_sensitivity: 1.0               # Microphone sensitivity (0.1-3.0, default 1.0)
+auto_gain_control: true            # Enable automatic gain control
 
 # Appearance - Bar
 bar_position: bottom               # 'bottom' or 'top'
