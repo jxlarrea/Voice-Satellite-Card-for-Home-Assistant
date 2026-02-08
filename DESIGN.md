@@ -498,7 +498,8 @@ Three global flags prevent this:
 | `chime_on_wake_word` | boolean | `true` | Play wake chime |
 | `chime_on_request_sent` | boolean | `true` | Play done chime after TTS |
 | `chime_volume` | number | `100` | Chime volume 0-100 |
-| `tts_volume` | number | `100` | TTS playback volume 0-100 |
+| `tts_volume` | number | `100` | TTS playback volume 0-100 (browser only) |
+| `tts_target` | string | `''` | TTS output device: empty = browser, or `media_player.*` entity ID |
 | `debug` | boolean | `false` | Structured console logging |
 
 ### Microphone
@@ -536,25 +537,59 @@ Three global flags prevent this:
 
 TTS URLs from HA are relative paths (e.g. `/api/tts_proxy/abc123.mp3`). The card prefixes them with `window.location.origin`. If the URL is already absolute (starts with `http`), it's used as-is.
 
-### 14.2 Playback and Barge-In
+### 14.2 Browser Playback (Default)
+
+When `tts_target` is empty or `'browser'`, TTS plays via a browser `Audio` element:
 
 ```javascript
-_playTTS(urlPath) {
-  var audio = new Audio();
-  audio.volume = config.tts_volume / 100;
-  audio.onended = function() { self._onTTSComplete(); };
-  audio.onerror = function() { self._onTTSComplete(); };
-  audio.src = url;
-  audio.play();
-  this._currentAudio = audio;
-}
+var audio = new Audio();
+audio.volume = config.tts_volume / 100;
+audio.onended = function() { self._onTTSComplete(); };
+audio.onerror = function() { self._onTTSComplete(); };
+audio.src = url;
+audio.play();
+this._currentAudio = audio;
 ```
 
 After starting TTS, `_restartPipeline(0)` is called immediately. The new pipeline listens for a wake word while audio plays. If the user says the wake word, `_handleWakeWordEnd` calls `_stopTTS()` which nulls the `onended`/`onerror` handlers (preventing ghost callbacks), pauses, and clears the audio element.
 
-### 14.3 Cleanup
+### 14.3 Remote Playback (Experimental)
 
-`_onTTSComplete` checks if a new interaction is already in progress (barge-in). If so, it does nothing — the UI belongs to the new interaction. Otherwise, it plays the done chime, hides all overlays, and calls `_updateUI()` to re-evaluate bar visibility.
+When `tts_target` is set to a `media_player.*` entity ID, TTS is routed to that device via a Home Assistant service call:
+
+```javascript
+this._hass.callService('media_player', 'play_media', {
+  entity_id: config.tts_target,
+  media_content_id: url,
+  media_content_type: 'music'
+});
+```
+
+**Differences from browser playback:**
+
+- **No `onended` callback.** There is no reliable way to know when a remote media player finishes playing. The UI (bubbles, blur, bar) is hidden after a fixed 2-second delay via `_ttsEndTimer`.
+- **Done chime is skipped.** Since TTS plays on a different device than the browser, playing a chime locally would be disorienting. The done chime only fires for browser playback.
+- **`tts_volume` does not apply.** The browser volume slider only controls the local `Audio` element. Remote player volume is controlled via the media player's own volume settings.
+- **Barge-in calls `media_player.media_stop`.** When the user says the wake word during remote TTS, `_stopTTS` sends a stop command to the media player and clears the UI timer.
+
+### 14.4 The `_ttsPlaying` Flag
+
+A boolean `_ttsPlaying` flag tracks whether TTS is active, regardless of playback target. It replaces direct `_currentAudio` checks for all state logic:
+
+- `_updateUI` — keeps the gradient bar visible while TTS plays
+- `_handleRunEnd` — defers UI cleanup if TTS is still active
+- `_handleWakeWordEnd` — triggers barge-in (stop TTS) if flag is set
+- Idle timeout — defers pipeline restart if TTS is playing
+
+`_currentAudio` is only used internally for browser `Audio` element management. `_ttsEndTimer` is only used for remote playback's 2-second UI cleanup delay.
+
+### 14.5 Cleanup
+
+`_onTTSComplete` clears both `_currentAudio` and `_ttsPlaying`, cancels `_ttsEndTimer` if pending, then checks if a new interaction is already in progress (barge-in). If so, it does nothing — the UI belongs to the new interaction. Otherwise, it plays the done chime (browser only), hides all overlays, and calls `_updateUI()`.
+
+### 14.6 Chimes Stay Local
+
+Chimes (wake, done, error) always play on the browser via the Web Audio API oscillator, regardless of `tts_target`. They are not routed to remote media players.
 
 ---
 
@@ -576,7 +611,7 @@ Categories: `state`, `lifecycle`, `mic`, `pipeline`, `event`, `error`, `recovery
 
 ## 16. Visual Editor
 
-The card provides a visual configuration editor (`VoiceSatelliteCardEditor`) with collapsible sections: Behavior, Microphone Processing (including voice isolation), Timeouts, Volume, Rainbow Bar, Transcription Bubble, Response Bubble, Background. The editor fetches available pipelines from HA for the pipeline dropdown and lists switch entities for the wake word switch picker.
+The card provides a visual configuration editor (`VoiceSatelliteCardEditor`) with collapsible sections: Behavior, Microphone Processing (including voice isolation), Timeouts, Volume & Chimes (including TTS output device dropdown), Rainbow Bar, Transcription Bubble, Response Bubble, Background. The editor fetches available pipelines from HA for the pipeline dropdown, lists `media_player.*` entities for the TTS output device dropdown, and lists switch entities for the wake word switch picker.
 
 ---
 
@@ -590,13 +625,13 @@ When recreating or modifying this card, verify:
 - [ ] First streaming chunk `{ chat_log_delta: { role: "assistant" } }` is skipped
 - [ ] All hidden overlay elements have `pointer-events: none`
 - [ ] TTS playback triggers immediate `_restartPipeline(0)` for barge-in
-- [ ] `_updateUI` keeps bar visible while `this._currentAudio` exists
+- [ ] `_updateUI` keeps bar visible while `_ttsPlaying` is true
 - [ ] No auto-hide timers on bubbles
 - [ ] Bubbles positioned with CSS `bottom`, not `top`
 - [ ] `_recalcShiftedPosition` debounced with `requestAnimationFrame`
 - [ ] Response bubble has `max-height: 40vh` and `overflow-y: auto`
 - [ ] Done chime plays in `_onTTSComplete`, not `_handleIntentEnd`
-- [ ] Done chime suppressed during barge-in (check state)
+- [ ] Done chime suppressed during barge-in (check state) and for remote TTS
 - [ ] Intent errors detected via `response_type === 'error'`; TTS suppressed
 - [ ] Intent error bar timeout cancelled on new `wake_word-end`
 - [ ] All callbacks use `var self = this` (ES5, no arrow functions)
@@ -611,3 +646,8 @@ When recreating or modifying this card, verify:
 - [ ] `_handleRunEnd` checks `_isRestarting` and skips if restart already in flight
 - [ ] `_restartPipeline` awaits `_stopPipeline` before scheduling new subscription
 - [ ] `_sendBinaryAudio` checks `socket.readyState === WebSocket.OPEN`
+- [ ] Remote TTS uses `media_player.play_media` service call, not browser Audio
+- [ ] Remote TTS barge-in calls `media_player.media_stop`
+- [ ] `_ttsPlaying` flag used for all TTS state checks (not `_currentAudio`)
+- [ ] `_ttsEndTimer` cleans up UI after 2s for remote playback
+- [ ] `setConfig` propagates config to `window._voiceSatelliteInstance` for live updates
