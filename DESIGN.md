@@ -1,6 +1,6 @@
 # Voice Satellite Card - Design Document
 
-**Version:** 1.11.0  
+**Version:** 1.12.0  
 **Last Updated:** February 2026
 
 ## Overview
@@ -80,9 +80,6 @@ Microphone (getUserMedia)
 MediaStreamSource
     │
     ▼
-GainNode (mic_sensitivity: 0.1 - 3.0)
-    │
-    ▼
 AudioWorklet (preferred) or ScriptProcessor (fallback)
     │
     ▼
@@ -109,7 +106,7 @@ WebSocket Binary Frames
     channelCount: 1,
     echoCancellation: config.echo_cancellation,
     noiseSuppression: config.noise_suppression,
-    autoGainControl: false  // Disabled - manual gain via GainNode
+    autoGainControl: config.auto_gain_control
   }
 }
 ```
@@ -182,7 +179,7 @@ debug: false                       # Console logging
 ```yaml
 noise_suppression: true            # Browser noise suppression
 echo_cancellation: true            # Browser echo cancellation
-mic_sensitivity: 1.0               # Gain multiplier (0.1-3.0)
+auto_gain_control: true            # Browser automatic gain control
 ```
 
 ### Appearance - Rainbow Bar
@@ -603,6 +600,7 @@ if (this._hass && this._hass.connection) {
 | 1.9.0 | TTS token refresh, expected error handling |
 | 1.10.0 | Mic sensitivity control, removed auto_gain_control |
 | 1.11.0 | Fixed live mic sensitivity updates, removed on-screen slider |
+| 1.12.0 | Removed mic_sensitivity and GainNode, restored auto_gain_control |
 
 ## Future Considerations
 
@@ -965,7 +963,7 @@ Note: Actual base64 data is ~10-50KB per chime. Generate using any audio editor,
 |----------|------------|------|-------|---------|
 | noise_suppression | noise_suppression | checkbox | - | true |
 | echo_cancellation | echo_cancellation | checkbox | - | true |
-| mic_sensitivity | mic_sensitivity | slider | 10-300 (displayed as %) | 100 (1.0) |
+| auto_gain_control | auto_gain_control | checkbox | - | true |
 
 ### Section: Timeouts
 
@@ -1052,7 +1050,7 @@ window.customCards.push({
 
 // Console branding
 console.info(
-  '%c VOICE-SATELLITE-CARD %c v1.11.0 ',
+  '%c VOICE-SATELLITE-CARD %c v1.12.0 ',
   'color: white; background: #03a9f4; font-weight: bold;',
   'color: #03a9f4; background: white; font-weight: bold;'
 );
@@ -1359,7 +1357,6 @@ this._connection.addEventListener('disconnected', function() {
 | `_sendAudioBuffer()` | Collect, resample, convert, send audio |
 | `_resample(input, fromRate, toRate)` | Linear interpolation resampling |
 | `_floatTo16BitPCM(samples)` | Convert Float32 to Int16 PCM |
-| `setMicSensitivity(value)` | Update gain node value |
 
 ### Pipeline Methods
 
@@ -2669,7 +2666,7 @@ stt-end            → Transcription complete
 
 ### Current Usage
 
-In v1.11.0, VAD events are **logged but not acted upon**:
+In v1.12.0, VAD events are **logged but not acted upon**:
 
 ```javascript
 case 'stt-vad-start':
