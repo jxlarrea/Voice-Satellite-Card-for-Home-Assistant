@@ -15,7 +15,7 @@ Home Assistant's built-in voice features require dedicated hardware like ESPHome
 
 - **Using your browser's microphone** - No additional hardware needed.
 - **Supporting wake words** - Say "OK Nabu" or your custom wake word to activate.
-- **Playing TTS responses** - Hear responses directly from your device.
+- **Playing TTS responses** - Hear responses directly from your device or a remote media player.
 - **Working on any device** - Tablets, phones, computers, kiosks.
 - **Providing visual feedback** - Gradient bar shows current state.
 - **Showing transcriptions** - See what was understood on screen.
