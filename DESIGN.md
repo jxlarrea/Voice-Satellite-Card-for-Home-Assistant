@@ -1,7 +1,5 @@
 # Voice Satellite Card — Design Document
 
-**Version:** 1.14.0
-
 ## 1. Overview
 
 Voice Satellite Card is a single-file custom Home Assistant Lovelace card (~1900 lines of ES5 JavaScript, no build step) that turns any browser into a voice-activated satellite. It captures microphone audio, sends it to Home Assistant's Assist pipeline over WebSocket, and plays back TTS responses — all without leaving the HA dashboard.
@@ -239,6 +237,38 @@ On resume, the card checks if the pipeline subscription (`_unsubscribe`) was los
 
 Intent errors show a red bar that auto-hides after 3 seconds via `_intentErrorBarTimeout`. This timeout is cancelled if a new wake word is detected (so the bar doesn't suddenly disappear mid-interaction).
 
+### 8.6 Concurrent Restart Prevention — Critical
+
+When the pipeline idle timeout fires, HA responds with both a `run-end` event and an `error` event (code `timeout`) in rapid succession. Without protection, three separate calls to `_restartPipeline` occur simultaneously within the same event loop tick:
+
+1. The idle timeout callback fires → `_restartPipeline(0)`
+2. The `run-end` event arrives → `_handleRunEnd` → `_finishRunEnd` → `_restartPipeline(0)`
+3. The `error` event arrives → `_handlePipelineError` → `_restartPipeline(0)`
+
+Since `_stopPipeline` is async (it awaits `_unsubscribe()`), the second and third calls see `_unsubscribe` as already null, resolve instantly, and each schedule their own `_startPipeline()`. This results in 3 parallel pipeline subscriptions with different `stt_binary_handler_id` values, all consuming server resources and causing unpredictable behavior.
+
+The fix uses an `_isRestarting` flag:
+
+```javascript
+_restartPipeline(delay) {
+  if (this._isRestarting) {
+    this._log('pipeline', 'Restart already in progress — skipping');
+    return;
+  }
+  this._isRestarting = true;
+  this._clearIdleTimeout();  // Prevent idle timeout from firing during restart
+
+  this._stopPipeline().then(function() {
+    self._restartTimeout = setTimeout(function() {
+      self._isRestarting = false;  // Clear flag right before starting new pipeline
+      self._startPipeline().catch(...);
+    }, delay || 0);
+  });
+}
+```
+
+The flag is set at entry, cleared just before `_startPipeline` executes. Additionally, `_handleRunEnd` checks `_isRestarting` early and skips entirely if a restart is already in flight.
+
 ---
 
 ## 9. WebSocket Communication
@@ -312,9 +342,11 @@ this._connection.socket.send(message.buffer);
 
 Before sending, the code checks `socket.readyState === WebSocket.OPEN` to avoid errors during connection teardown.
 
-### 9.6 Unsubscription
+### 9.6 Unsubscription & Restart Serialization
 
 When the pipeline restarts, `_restartPipeline` awaits `_stopPipeline()` which properly `await`s the unsubscribe function before the new subscription is created. This prevents stale subscriptions from piling up. All restart paths go through `_restartPipeline` — no manual fire-and-forget unsubscribe calls.
+
+An `_isRestarting` flag serializes concurrent restart attempts. This is critical because the pipeline idle timeout, `run-end`, and `error` events can all fire within the same event loop tick, each trying to restart the pipeline. Without the flag, multiple parallel subscriptions are created (see Section 8.6).
 
 ---
 
@@ -571,5 +603,8 @@ When recreating or modifying this card, verify:
 - [ ] `_log()` checks debug internally — no redundant guards
 - [ ] `voice_isolation` uses `advanced` constraint array (graceful fallback)
 - [ ] `duplicate_wake_up_detected` uses underscores (HA API inconsistency)
+- [ ] `_restartPipeline` uses `_isRestarting` flag to prevent concurrent restarts
+- [ ] `_restartPipeline` clears idle timeout at entry to prevent re-triggering during restart
+- [ ] `_handleRunEnd` checks `_isRestarting` and skips if restart already in flight
 - [ ] `_restartPipeline` awaits `_stopPipeline` before scheduling new subscription
 - [ ] `_sendBinaryAudio` checks `socket.readyState === WebSocket.OPEN`
