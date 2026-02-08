@@ -89,18 +89,22 @@ type: custom:voice-satellite-card
 
 # Behavior
 start_listening_on_load: true      # Auto-start on page load
+pipeline_id: ''                    # Pipeline ID (empty = default pipeline)
 wake_word_switch: ''               # Switch to turn OFF when wake word detected
                                    # e.g., 'switch.tablet_screensaver'
 pipeline_timeout: 60               # Max seconds to wait for pipeline response (0 = no timeout)
 pipeline_idle_timeout: 300         # Seconds before pipeline restarts to keep TTS fresh (default 5 min)
 chime_on_wake_word: true           # Play chime when wake word detected
 chime_on_request_sent: true        # Play chime after request processed
+chime_volume: 100                  # Chime volume (0-100)
+tts_volume: 100                    # TTS playback volume (0-100)
 debug: false                       # Show debug info in browser console
 
 # Microphone Processing
 noise_suppression: true            # Enable noise suppression
 echo_cancellation: true            # Enable echo cancellation
 auto_gain_control: true            # Enable automatic gain control
+voice_isolation: false             # AI-based voice isolation (Chrome only)
 
 # Appearance - Bar
 bar_position: bottom               # 'bottom' or 'top'
