@@ -1,6 +1,6 @@
 {
   "name": "Voice Satellite Card",
   "render_readme": true,
-  "filename": "voice-satellite-card.js",
+  "filename": "voice-satellite-card.min.js",
   "homeassistant": "2025.1.2"
 }
