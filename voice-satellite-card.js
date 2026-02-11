@@ -1,5 +1,5 @@
 /**
- * Voice Satellite Card v2.4.0
+ * Voice Satellite Card v2.5.0
  * Transform your browser into a voice satellite for Home Assistant Assist
  * 
  * A custom Lovelace card that enables wake word detection, speech-to-text,
@@ -69,7 +69,7 @@ var DEFAULT_CONFIG = {
 
   // Response Bubble
   show_response: true,
-  streaming_response: false,
+  streaming_response: true,
   response_font_size: 20,
   response_font_family: 'inherit',
   response_font_color: '#444444',
@@ -2278,7 +2278,7 @@ window.customCards.push({
 });
 
 console.info(
-  '%c VOICE-SATELLITE-CARD %c v2.4.0 ',
+  '%c VOICE-SATELLITE-CARD %c v2.5.0 ',
   'color: white; background: #03a9f4; font-weight: bold;',
   'color: #03a9f4; background: white; font-weight: bold;'
 );
