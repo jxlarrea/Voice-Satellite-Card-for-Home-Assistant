@@ -339,7 +339,7 @@ The handler reads `message.type` and `message.data` directly. Do NOT check `mess
 
 | Event | Description | Key Data Fields |
 |-------|-------------|-----------------|
-| `run-start` | Pipeline initialized, ready for audio | `data.runner_data.stt_binary_handler_id` — required for binary audio framing |
+| `run-start` | Pipeline initialized, ready for audio | `data.runner_data.stt_binary_handler_id` — required for binary audio framing. If streaming TTS is available: `data.tts_output.url` (pre-allocated TTS URL) and `data.tts_output.stream_response: true`. |
 | `wake_word-start` | Listening for wake word | Used for recovery detection timing |
 | `wake_word-end` | Wake word detected (or service unavailable if output empty) | `data.wake_word_output.wake_word_id` |
 | `stt-start` | Speech-to-text engine started | State → STT |
@@ -347,7 +347,7 @@ The handler reads `message.type` and `message.data` directly. Do NOT check `mess
 | `stt-vad-end` | Voice activity ended (user stopped) | Logged, not acted upon |
 | `stt-end` | Transcription complete | `data.stt_output.text` |
 | `intent-start` | Intent processing started | State → INTENT |
-| `intent-progress` | Streaming response token (when `streaming_response: true`) | `data.chat_log_delta.content` (string, append to accumulator). First chunk may be `{ role: "assistant" }` with no content — skip it. |
+| `intent-progress` | Streaming response token (when `streaming_response: true`) | `data.chat_log_delta.content` (string, append to accumulator). First chunk may be `{ role: "assistant" }` with no content — skip it. May also contain `data.tts_start_streaming: true` — signals TTS engine has started generating audio from partial text; trigger early TTS playback (see §14.3). |
 | `intent-end` | Intent processing complete | `data.intent_output.response.speech.plain.speech` — the response text. Also check `data.intent_output.response.response_type` — if `"error"`, the LLM service is down. `data.intent_output.continue_conversation` (boolean) — if `true`, the agent expects a follow-up. `data.intent_output.conversation_id` (string) — pass to next pipeline run for conversation context. |
 | `tts-start` | TTS generation started | State → TTS |
 | `tts-end` | TTS audio URL ready | `data.tts_output.url` or `data.tts_output.url_path` — relative path, must be prefixed with `window.location.origin` |
@@ -578,7 +578,22 @@ this._currentAudio = audio;
 
 After starting TTS, `_restartPipeline(0)` is called immediately. The new pipeline listens for a wake word while audio plays. If the user says the wake word, `_handleWakeWordEnd` calls `_stopTTS()` which nulls the `onended`/`onerror` handlers (preventing ghost callbacks), pauses, and clears the audio element.
 
-### 14.3 Remote Playback (Experimental)
+### 14.3 Streaming TTS (Early Playback)
+
+When the TTS engine supports streaming (e.g. streaming Piper, OpenAI TTS), HA can start generating audio before the LLM finishes its full response. The card detects and leverages this for faster time-to-audio:
+
+1. **`run-start`** provides the TTS URL upfront with `stream_response: true` in `tts_output`. The card stores it as `_streamingTtsUrl`.
+2. **`intent-progress`** chunks stream in — text appears in the response bubble as normal.
+3. **`intent-progress` with `tts_start_streaming: true`** — HA signals TTS has started generating audio from partial text. The card immediately calls `_playTTS(_streamingTtsUrl)`, sets state to TTS, and nulls the stored URL (consumed). The browser `Audio` element handles chunked/progressive playback naturally.
+4. **More `intent-progress` chunks** continue arriving — text keeps streaming into the bubble while audio is already playing.
+5. **`tts-end`** arrives — `_handleTtsEnd` sees `_ttsPlaying` is already true and skips duplicate playback. It still calls `_restartPipeline(0)` for barge-in.
+6. **`run-end`** — deferred via `_pendingRunEnd` since TTS is playing.
+
+**Critical: no pipeline restart at `tts_start_streaming`.** Unlike `_handleTtsEnd`, the streaming start does NOT restart the pipeline because `intent-progress` text chunks are still arriving on the current subscription. Restarting would unsubscribe and lose remaining chunks, freezing the response bubble mid-sentence. The pipeline restart for barge-in happens later at `tts-end`.
+
+**Fallback:** If `run-start` does not include `stream_response: true` (non-streaming TTS engine), `_streamingTtsUrl` stays null, the `tts_start_streaming` check is a no-op, and `_handleTtsEnd` plays TTS the traditional way. Fully backward compatible.
+
+### 14.4 Remote Playback (Experimental)
 
 When `tts_target` is set to a `media_player.*` entity ID, TTS is routed to that device via a Home Assistant service call:
 
@@ -597,7 +612,7 @@ this._hass.callService('media_player', 'play_media', {
 - **`tts_volume` does not apply.** The browser volume slider only controls the local `Audio` element. Remote player volume is controlled via the media player's own volume settings.
 - **Barge-in calls `media_player.media_stop`.** When the user says the wake word during remote TTS, `_stopTTS` sends a stop command to the media player and clears the UI timer.
 
-### 14.4 The `_ttsPlaying` Flag
+### 14.6 The `_ttsPlaying` Flag
 
 A boolean `_ttsPlaying` flag tracks whether TTS is active, regardless of playback target. It replaces direct `_currentAudio` checks for all state logic:
 
@@ -608,7 +623,7 @@ A boolean `_ttsPlaying` flag tracks whether TTS is active, regardless of playbac
 
 `_currentAudio` is only used internally for browser `Audio` element management. `_ttsEndTimer` is only used for remote playback's 2-second UI cleanup delay.
 
-### 14.5 Cleanup
+### 14.7 Cleanup
 
 `_onTTSComplete` clears both `_currentAudio` and `_ttsPlaying`, cancels `_ttsEndTimer` if pending, then checks if a new interaction is already in progress (barge-in). If so, it does nothing — the UI belongs to the new interaction.
 
@@ -616,7 +631,7 @@ Next, it checks if continue conversation mode is active (`_shouldContinue` and `
 
 Otherwise (normal completion), it plays the done chime (browser only), calls `_chatClear()` to remove all chat messages, hides the blur overlay, and calls `_updateUI()`.
 
-### 14.6 Chimes Stay Local
+### 14.8 Chimes Stay Local
 
 Chimes (wake, done, error) always play on the browser via the Web Audio API oscillator, regardless of `tts_target`. They are not routed to remote media players.
 
@@ -766,3 +781,8 @@ When recreating or modifying this card, verify:
 - [ ] Double-tap handler checks `double_tap_cancel` config before acting
 - [ ] Double-tap listener on `document` catches events from chat messages, blur overlay, and empty space
 - [ ] Double-tap cancellation stops TTS, clears chat, hides blur, plays done chime, restarts pipeline
+- [ ] `_streamingTtsUrl` stored from `run-start` when `tts_output.stream_response` is true
+- [ ] `tts_start_streaming` in `intent-progress` triggers early `_playTTS` from stored URL
+- [ ] `_handleIntentProgress` does NOT restart pipeline at `tts_start_streaming` (text still streaming)
+- [ ] `_handleTtsEnd` skips playback if `_ttsPlaying` already true (streaming started early)
+- [ ] `_streamingTtsUrl` reset to null on every `run-start` to prevent stale URLs
