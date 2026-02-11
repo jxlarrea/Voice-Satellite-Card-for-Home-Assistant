@@ -1,5 +1,5 @@
 /**
- * Voice Satellite Card v2.1.0
+ * Voice Satellite Card v2.2.0
  * Transform your browser into a voice satellite for Home Assistant Assist
  * 
  * A custom Lovelace card that enables wake word detection, speech-to-text,
