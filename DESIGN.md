@@ -94,7 +94,7 @@ The container is a flex column positioned at the bottom of the screen above the 
 - `_chatAddUser(text)` — appends a user message (styled with transcription config)
 - `_chatAddAssistant(text)` — appends an assistant message (styled with response config), stores element as `_chatStreamEl`
 - `_chatUpdateAssistant(text)` — updates the current `_chatStreamEl` with a trailing text fade effect (see below)
-- `_chatClear()` — removes all messages, hides container, resets `_chatStreamEl`
+- `_chatClear()` — removes all messages, hides container, resets `_chatStreamEl` and `_streamedResponse`
 - `_escapeHtml(str)` — escapes HTML entities for safe innerHTML use in streaming fade
 
 **Legacy API wrappers** route old calls to the chat container so all existing callers work unchanged:
@@ -111,7 +111,7 @@ The container is a flex column positioned at the bottom of the screen above the 
 
 **Multi-turn behavior (continue conversation):** Messages accumulate in the container across turns, creating a chat-style thread. The container is only cleared when the conversation fully ends (done chime) or is interrupted (barge-in, tab switch, error).
 
-The container has `overflow: visible` and no scrollbar — messages simply grow upward from the bottom. All messages are centered horizontally within the container.
+The container uses `display: none` by default and switches to `display: flex` when the `.visible` class is added. This ensures no stale content can flash on screen between interactions. The container has `overflow: visible` and no scrollbar — messages simply grow upward from the bottom. All messages are centered horizontally within the container.
 
 ### 4.5 Start Button
 
@@ -337,6 +337,11 @@ The `timeout` at the top level is the overall pipeline response timeout sent to 
 ```
 
 The handler reads `message.type` and `message.data` directly. Do NOT check `message.type === 'event'` or access `message.event` — this will cause all events to be silently dropped.
+
+**Event guards:** `_handlePipelineMessage` drops all events in two cases:
+
+- `_isPaused` is true — tab is hidden, UI has been cleaned up (see §8.4)
+- `_isRestarting` is true — pipeline is being torn down and restarted (e.g. after double-tap cancel or barge-in). Without this guard, straggling events from the old subscription (like `intent-progress` chunks still in the WebSocket buffer) can recreate UI elements after `_chatClear()` has already cleaned up.
 
 ### 9.4 Pipeline Events Reference
 
@@ -700,6 +705,8 @@ When `double_tap_cancel` is enabled (default: `true`), double-tapping anywhere o
 - `double_tap_cancel` config is enabled
 - The current state is an active interaction (WAKE_WORD_DETECTED, STT, INTENT, TTS) OR `_ttsPlaying` is true
 
+**Touch/click deduplication:** On touch devices, a single physical tap fires both `touchstart` and `click` (~300ms apart). Without deduplication, this would register as a double-tap from a single tap. The `_lastTapWasTouch` flag prevents this: when a `touchstart` fires, the immediately following `click` event is ignored. This ensures exactly two physical taps are required on both touch and non-touch devices.
+
 Since the listener is on `document`, it catches taps on any element: the blur overlay, chat messages, gradient bar, or empty space. Chat messages have `pointer-events: auto` when the container is visible, so events bubble up normally.
 
 ### 16.3 Cancellation Actions
@@ -708,10 +715,11 @@ When a double-tap is detected:
 
 1. `_stopTTS()` — stops browser audio or sends `media_player.media_stop` for remote playback
 2. Clears `_shouldContinue` and `_continueConversationId` — ends any multi-turn conversation
-3. `_chatClear()` — removes all chat messages
-4. `_hideBlurOverlay()` — hides the backdrop
-5. Plays the done chime (browser only) to acknowledge cancellation
-6. `_restartPipeline(0)` — restarts fresh in wake word mode
+3. Sets state to IDLE — prevents straggling pipeline events from recreating UI elements
+4. `_chatClear()` — removes all chat messages and resets `_streamedResponse` accumulator
+5. `_hideBlurOverlay()` — hides the backdrop
+6. Plays the done chime (browser only) to acknowledge cancellation
+7. `_restartPipeline(0)` — restarts fresh in wake word mode
 
 ---
 
@@ -792,3 +800,8 @@ When recreating or modifying this card, verify:
 - [ ] `_chatUpdateAssistant` applies trailing 24-char fade via per-character opacity spans
 - [ ] `_showResponse` sets final text via `textContent` (no fade spans) to clear streaming effect
 - [ ] `_escapeHtml` used for all innerHTML in streaming fade to prevent XSS from response text
+- [ ] `_handlePipelineMessage` drops all events while `_isRestarting` is true
+- [ ] `_chatClear` resets `_streamedResponse` to empty string (prevents stale text leaking to next interaction)
+- [ ] Double-tap handler deduplicates `touchstart`/`click` via `_lastTapWasTouch` flag
+- [ ] Double-tap sets state to IDLE before clearing UI (blocks straggling event handlers)
+- [ ] Chat container uses `display: none` by default, `display: flex` when `.visible`
