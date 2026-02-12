@@ -1,4 +1,6 @@
 const path = require('path');
+const pkg = require('./package.json');
+const webpack = require('webpack');
 
 const baseConfig = {
   entry: './src/index.js',
@@ -13,6 +15,11 @@ const baseConfig = {
       },
     ],
   },
+  plugins: [
+    new webpack.DefinePlugin({
+      __VERSION__: JSON.stringify(pkg.version),
+    }),
+  ],
 };
 
 module.exports = [

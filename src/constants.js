@@ -2,7 +2,8 @@
  * Voice Satellite Card — Constants
  */
 
-export const VERSION = '2.5.0';
+/* global __VERSION__ */
+export const VERSION = __VERSION__;
 
 export const State = {
   IDLE: 'IDLE',
