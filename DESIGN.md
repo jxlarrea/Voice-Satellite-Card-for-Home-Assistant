@@ -11,12 +11,14 @@ The source is organized as ES6 modules in `src/`, bundled via Webpack + Babel in
 ## 2. High-Level Flow
 
 ```mermaid
-graph LR
+graph TD
     A[Browser Microphone] --> B[Audio Processing]
-    B -->|Binary WebSocket| C[Home Assistant WebSocket API]
+    B -->|Binary WebSocket| C[Home Assistant]
     C --> D[Assist Pipeline]
-    D -->|Wake Word / STT / TTS| E[Pipeline Events]
-    E --> F[Visual Feedback & TTS Playback]
+    D --> E[Pipeline Events]
+    E --> F[Visual Feedback]
+    E --> G[TTS Playback]
+    G -->|Restart| D
 ```
 
 1. The card acquires the browser microphone via `getUserMedia`.
