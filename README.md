@@ -211,30 +211,44 @@ state_entity: input_text.voice_satellite_living_room
 
 ```yaml
 # Mute the living room TV when voice interaction starts
-automation:
-  - alias: "Mute TV on voice interaction"
-    trigger:
-      - platform: state
-        entity_id: input_text.voice_satellite_living_room
-        to: "ACTIVE"
-    action:
-      - service: media_player.volume_mute
-        target:
-          entity_id: media_player.living_room_tv
-        data:
-          is_volume_muted: true
+alias: Mute Living Room TV When Tablet is ACTIVE
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - input_text.voice_satellite_living_room
+    to:
+      - ACTIVE
+conditions: []
+actions:
+  - action: media_player.volume_mute
+    metadata: {}
+    target:
+      entity_id: media_player.living_room_tv
+    data:
+      is_volume_muted: true
+mode: single
+```
 
-  - alias: "Unmute TV after voice interaction"
-    trigger:
-      - platform: state
-        entity_id: input_text.voice_satellite_living_room
-        to: "IDLE"
-    action:
-      - service: media_player.volume_mute
-        target:
-          entity_id: media_player.living_room_tv
-        data:
-          is_volume_muted: false
+```yaml
+# Unmute the living room TV after voice interaction ends
+alias: Unmute Living Room TV When Tablet is IDLE
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - input_text.voice_satellite_living_room
+    to:
+      - IDLE
+conditions: []
+actions:
+  - action: media_player.volume_mute
+    metadata: {}
+    target:
+      entity_id: media_player.living_room_tv
+    data:
+      is_volume_muted: false
+mode: single
 ```
 
 ## Troubleshooting
