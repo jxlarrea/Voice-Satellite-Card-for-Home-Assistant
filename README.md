@@ -2,7 +2,7 @@
 
 Transform any browser into a voice-activated satellite for Home Assistant's Assist. This custom card captures microphone audio and streams it to your Assist pipeline for wake word detection, speech recognition, and voice responses - turning tablets, wall-mounted displays, or any device with a microphone into a hands-free voice assistant.
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jxlarrea&repository=Voice-Satellite-Card-for-Home-Assistant)
 [![version](https://shields.io/github/v/release/jxlarrea/Voice-Satellite-Card-for-Home-Assistant?style=for-the-badge)](https://github.com/jxlarrea/Voice-Satellite-Card-for-Home-Assistant/releases)
 
 ![Screenshot](https://github.com/user-attachments/assets/178d8639-bf05-409e-8bc7-f4283fb36593)
@@ -71,19 +71,24 @@ Before using this card, ensure you have Home Assistant with the [Assist Pipeline
 
 ### HACS (Recommended)
 
-1. Open HACS in Home Assistant.
-2. Click the three dots menu, then Custom repositories.
-3. Add this repository URL and select Lovelace as the category.
-4. Click Install.
-5. Refresh your browser.
+Voice Satellite Card is available in the Home Assistant Community Store. Use this link to directly go to the repository in HACS:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jxlarrea&repository=Voice-Satellite-Card-for-Home-Assistant)
+
+Or you can also search it manually:
+
+1. Install HACS if you don't have it already
+2. Open HACS in Home Assistant
+3. Search for "Voice Satellite Card"
+4. Click the download button
 
 ### Manual Installation
 
-1. Download `voice-satellite-card.js` from this repository
+1. Download `voice-satellite-card.min.js` from this repository
 2. Copy it to your `config/www/` folder
 3. Add the resource in Home Assistant:
    - Go to Settings, Dashboards, Resources
-   - Add `/local/voice-satellite-card.js` as a JavaScript module
+   - Add `/local/voice-satellite-card.min.js` as a JavaScript module
 
 ## Configuration
 
