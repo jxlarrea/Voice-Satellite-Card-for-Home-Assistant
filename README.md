@@ -38,6 +38,8 @@ https://github.com/user-attachments/assets/50f51ebc-be70-4ea2-a1b5-8d80446f55c2
 
 For kiosk setups like [Fully Kiosk Browser](https://play.google.com/store/apps/details?id=de.ozerov.fully), make sure to enable microphone permissions and use the screensaver feature (not screen off) to keep the microphone active while dimming the display.
 
+For the **Home Assistant Companion App**, enable **Autoplay videos** in Settings → Companion App → Other settings. Without this, the WebView will block TTS audio playback.
+
 ## How It Works
 
 ```mermaid
@@ -298,6 +300,16 @@ mode: single
 
 1. Check that TTS is configured in your Assist pipeline.
 2. Check browser audio permissions.
+
+### No TTS audio on Home Assistant Companion App
+
+The Home Assistant Companion App uses a WebView that may block audio autoplay by default. To enable TTS playback:
+
+1. Open the Companion App
+2. Go to Settings → Companion App → Other settings
+3. Enable **Autoplay videos**
+
+Without this setting, the card will still function (wake word detection, speech-to-text, and visual feedback all work normally) but TTS audio won't play. The UI will clean up gracefully after the interaction completes.
 
 ### Card not visible
 

@@ -14,6 +14,7 @@ export class TtsManager {
     this._playing = false;
     this._endTimer = null;
     this._streamingUrl = null;
+    this._playbackWatchdog = null;
   }
 
   get isPlaying() {
@@ -46,21 +47,36 @@ export class TtsManager {
     var audio = new Audio();
     audio.volume = config.tts_volume / 100;
 
+    // Watchdog: if playback hasn't completed after 30s, force completion.
+    // Covers Android WebView / Companion App where events may never fire.
+    this._playbackWatchdog = setTimeout(function () {
+      self._playbackWatchdog = null;
+      if (self._playing && self._currentAudio === audio) {
+        self._log.log('tts', 'Playback watchdog fired — forcing completion');
+        self._onComplete();
+      }
+    }, 30000);
+
     audio.onended = function () {
       self._log.log('tts', 'Playback complete');
+      self._clearWatchdog();
       self._onComplete();
     };
 
     audio.onerror = function (e) {
       self._log.error('tts', 'Playback error: ' + e);
       self._log.error('tts', 'URL: ' + url);
+      self._clearWatchdog();
       self._onComplete();
     };
 
     audio.src = url;
-    audio.play().catch(function (e) {
+    audio.play().then(function () {
+      self._log.log('tts', 'Playback started successfully');
+    }).catch(function (e) {
       self._log.error('tts', 'play() failed: ' + e);
-      self._onComplete();
+      self._clearWatchdog();
+      self._onComplete(true);
     });
 
     this._currentAudio = audio;
@@ -68,6 +84,7 @@ export class TtsManager {
 
   stop() {
     this._playing = false;
+    this._clearWatchdog();
 
     if (this._endTimer) {
       clearTimeout(this._endTimer);
@@ -155,6 +172,13 @@ export class TtsManager {
 
   // --- Private ---
 
+  _clearWatchdog() {
+    if (this._playbackWatchdog) {
+      clearTimeout(this._playbackWatchdog);
+      this._playbackWatchdog = null;
+    }
+  }
+
   _playRemote(url) {
     var self = this;
     var entityId = this._card.config.tts_target;
@@ -175,8 +199,8 @@ export class TtsManager {
     }, 2000);
   }
 
-  _onComplete() {
-    this._log.log('tts', 'Complete — cleaning up UI');
+  _onComplete(playbackFailed) {
+    this._log.log('tts', 'Complete — cleaning up UI' + (playbackFailed ? ' (playback failed)' : ''));
     this._currentAudio = null;
     this._playing = false;
 
@@ -185,7 +209,7 @@ export class TtsManager {
       this._endTimer = null;
     }
 
-    this._card.onTTSComplete();
+    this._card.onTTSComplete(playbackFailed);
   }
 
   _buildUrl(urlPath) {

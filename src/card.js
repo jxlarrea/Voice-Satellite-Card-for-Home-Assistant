@@ -188,15 +188,18 @@ export class VoiceSatelliteCard extends HTMLElement {
     this._handlePipelineMessage(message);
   }
 
-  onTTSComplete() {
-    var activeInteraction = [State.WAKE_WORD_DETECTED, State.STT, State.INTENT, State.TTS];
-    if (activeInteraction.indexOf(this._state) !== -1) {
+  onTTSComplete(playbackFailed) {
+    // If a NEW interaction has started (wake word detected again during TTS),
+    // don't clean up — let the new interaction handle its own lifecycle.
+    // Note: State.TTS itself is NOT a new interaction — it means we're completing normally.
+    var newInteraction = [State.WAKE_WORD_DETECTED, State.STT, State.INTENT];
+    if (newInteraction.indexOf(this._state) !== -1) {
       this._logger.log('tts', 'New interaction in progress — skipping cleanup');
       return;
     }
 
-    // Continue conversation
-    if (this._pipeline.shouldContinue && this._pipeline.continueConversationId) {
+    // Continue conversation (only if TTS actually played successfully)
+    if (!playbackFailed && this._pipeline.shouldContinue && this._pipeline.continueConversationId) {
       this._logger.log('pipeline', 'Continuing conversation — skipping wake word');
       var conversationId = this._pipeline.continueConversationId;
       this._pipeline.clearContinueState();

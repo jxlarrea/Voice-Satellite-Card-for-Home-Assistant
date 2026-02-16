@@ -164,10 +164,10 @@ Debug logging includes timestamp (extracted from `message.timestamp`) and trunca
 
 ### 3.6 TTS Complete Callback
 
-`card.onTTSComplete()` handles the end of TTS playback (called by `TtsManager._onComplete()`):
+`card.onTTSComplete(playbackFailed)` handles the end of TTS playback (called by `TtsManager._onComplete()`):
 
-1. **Barge-in check:** If current state is an active interaction (WAKE_WORD_DETECTED, STT, INTENT, TTS), a new interaction has started — skip cleanup entirely.
-2. **Continue conversation:** If `pipeline.shouldContinue` and `pipeline.continueConversationId` are set, keep blur/bar/chat visible, clear `chat.streamEl` (so next turn creates fresh bubble), call `pipeline.restartContinue(conversationId)`.
+1. **Barge-in check:** If current state is an active *new* interaction (WAKE_WORD_DETECTED, STT, INTENT — but not TTS itself), a new interaction has started — skip cleanup entirely. TTS is excluded from this guard because the state is still TTS when playback completes normally or fails immediately.
+2. **Continue conversation:** If `playbackFailed` is falsy and `pipeline.shouldContinue` and `pipeline.continueConversationId` are set, keep blur/bar/chat visible, clear `chat.streamEl` (so next turn creates fresh bubble), call `pipeline.restartContinue(conversationId)`. When playback failed (e.g. autoplay blocked), the continue-conversation path is skipped to ensure the UI cleans up properly.
 3. **Normal completion:** Play done chime (browser only, not remote TTS), call `chat.clear()`, `ui.hideBlurOverlay()`, `ui.updateForState()`.
 
 ### 3.7 Response Text Extraction
@@ -772,11 +772,15 @@ audio.volume = config.tts_volume / 100;
 audio.onended = function() { self._onComplete(); };
 audio.onerror = function() { self._onComplete(); };
 audio.src = url;
-audio.play();
+audio.play().then(function() { ... }).catch(function(e) { self._onComplete(true); });
 this._currentAudio = audio;
 ```
 
 After starting TTS, `pipeline.restart(0)` is called immediately. The new pipeline listens for a wake word while audio plays. If the user says the wake word, `pipeline.handleWakeWordEnd()` calls `tts.stop()` which nulls the `onended`/`onerror` handlers (preventing ghost callbacks), pauses, and clears the audio element.
+
+**Watchdog timer:** A 30-second safety timer is started alongside playback. If neither `onended`, `onerror`, nor the `.catch()` fires within 30 seconds (possible in some WebView environments where events silently fail), the watchdog forces `_onComplete()`. The watchdog is cleared on normal completion, error, explicit `stop()`, or `.catch()`.
+
+**Autoplay failure (Companion App):** The Home Assistant Companion App's WebView may block `Audio.play()` unless initiated by a user gesture, throwing `NotAllowedError`. When this happens, `_onComplete(true)` is called with the `playbackFailed` flag set, which ensures `onTTSComplete` skips the continue-conversation path and goes straight to full UI cleanup (clear chat, hide blur, reset state). The Companion App can be configured to allow autoplay via Settings → Companion App → Other settings → "Autoplay videos".
 
 ### 15.3 Streaming TTS (Early Playback)
 
