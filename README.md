@@ -7,6 +7,8 @@ Transform any browser into a voice-activated satellite for Home Assistant's Assi
 [![Downloads](https://img.shields.io/github/downloads/jxlarrea/Voice-Satellite-Card-for-Home-Assistant/total?style=for-the-badge&label=Downloads)](https://github.com/jxlarrea/Voice-Satellite-Card-for-Home-Assistant/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/jxlarrea/Voice-Satellite-Card-for-Home-Assistant/release.yaml?style=for-the-badge&label=Build)](https://github.com/jxlarrea/Voice-Satellite-Card-for-Home-Assistant/actions/workflows/release.yaml)
 
+<a href="https://www.buymeacoffee.com/jxlarrea" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/white_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
+
 ![Screenshot](https://github.com/user-attachments/assets/178d8639-bf05-409e-8bc7-f4283fb36593)
 
 ## Why This Card?
