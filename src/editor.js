@@ -1,279 +1,447 @@
 /**
  * Voice Satellite Card — Editor
  *
- * Visual configuration editor for the HA Lovelace UI.
+ * Schema-based configuration using Home Assistant's built-in form editor.
+ * Uses native HA selectors for entity pickers, toggles, sliders, etc.
+ *
+ * The schema is returned via getConfigForm() on the card class,
+ * so no custom editor element is needed.
  */
 
-import { DEFAULT_CONFIG } from './constants.js';
+export function getConfigForm() {
+  return {
+    schema: [
+      // --- Behavior (always visible) ---
+      {
+        name: 'pipeline_id',
+        selector: { assist_pipeline: {} },
+      },
+      {
+        name: 'start_listening_on_load',
+        selector: { boolean: {} },
+      },
+      {
+        name: 'wake_word_switch',
+        selector: {
+          entity: {
+            filter: [
+              { domain: 'switch' },
+              { domain: 'input_boolean' },
+            ],
+          },
+        },
+      },
+      {
+        name: 'state_entity',
+        selector: {
+          entity: {
+            filter: { domain: 'input_text' },
+          },
+        },
+      },
+      {
+        name: 'continue_conversation',
+        selector: { boolean: {} },
+      },
+      {
+        name: 'double_tap_cancel',
+        selector: { boolean: {} },
+      },
+      {
+        name: 'debug',
+        selector: { boolean: {} },
+      },
 
-export class VoiceSatelliteCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this._config = {};
-    this._hass = null;
-    this._pipelines = [];
-  }
+      // --- Volume & Chimes ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Volume & Chimes',
+        flatten: true,
+        schema: [
+          {
+            name: 'tts_target',
+            selector: {
+              entity: {
+                filter: { domain: 'media_player' },
+              },
+            },
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'chime_volume',
+                selector: {
+                  number: { min: 0, max: 100, step: 1, unit_of_measurement: '%', mode: 'slider' },
+                },
+              },
+              {
+                name: 'tts_volume',
+                selector: {
+                  number: { min: 0, max: 100, step: 1, unit_of_measurement: '%', mode: 'slider' },
+                },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'chime_on_wake_word',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'chime_on_request_sent',
+                selector: { boolean: {} },
+              },
+            ],
+          },
+        ],
+      },
 
-  set hass(hass) {
-    this._hass = hass;
-    if (hass && hass.connection && this._pipelines.length === 0) {
-      this._loadPipelines();
-    }
-  }
+      // --- Microphone Processing ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Microphone Processing',
+        flatten: true,
+        schema: [
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'noise_suppression',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'echo_cancellation',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'auto_gain_control',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'voice_isolation',
+                selector: { boolean: {} },
+              },
+            ],
+          },
+        ],
+      },
 
-  setConfig(config) {
-    this._config = Object.assign({}, DEFAULT_CONFIG, config);
-    this._render();
-  }
+      // --- Timeouts ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Timeouts',
+        flatten: true,
+        schema: [
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'pipeline_timeout',
+                selector: {
+                  number: { min: 0, max: 300, step: 1, unit_of_measurement: 's', mode: 'box' },
+                },
+              },
+              {
+                name: 'pipeline_idle_timeout',
+                selector: {
+                  number: { min: 0, max: 3600, step: 1, unit_of_measurement: 's', mode: 'box' },
+                },
+              },
+            ],
+          },
+        ],
+      },
 
-  async _loadPipelines() {
-    try {
-      var result = await this._hass.connection.sendMessagePromise({
-        type: 'assist_pipeline/pipeline/list',
-      });
-      this._pipelines = result.pipelines || [];
-      this._render();
-    } catch (e) {
-      console.error('[VS][editor] Failed to load pipelines:', e);
-    }
-  }
+      // --- Rainbow Bar ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Activity Bar',
+        flatten: true,
+        schema: [
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'bar_position',
+                selector: {
+                  select: {
+                    options: [
+                      { value: 'bottom', label: 'Bottom' },
+                      { value: 'top', label: 'Top' },
+                    ],
+                    mode: 'dropdown',
+                  },
+                },
+              },
+              {
+                name: 'bar_height',
+                selector: {
+                  number: { min: 2, max: 40, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+                },
+              },
+            ],
+          },
+          {
+            name: 'bar_gradient',
+            selector: { text: {} },
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'background_blur',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'background_blur_intensity',
+                selector: {
+                  number: { min: 0, max: 20, step: 1, mode: 'slider' },
+                },
+              },
+            ],
+          },
+        ],
+      },
 
-  _render() {
-    var cfg = this._config;
+      // --- Transcription Bubble ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Transcription Bubble',
+        flatten: true,
+        schema: [
+          {
+            name: 'show_transcription',
+            selector: { boolean: {} },
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'transcription_font_size',
+                selector: {
+                  number: { min: 10, max: 48, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+                },
+              },
+              {
+                name: 'transcription_font_family',
+                selector: { text: {} },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'transcription_font_color',
+                selector: { text: {} },
+              },
+              {
+                name: 'transcription_background',
+                selector: { text: {} },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'transcription_font_bold',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'transcription_font_italic',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'transcription_rounded',
+                selector: { boolean: {} },
+              },
+            ],
+          },
+          {
+            name: 'transcription_border_color',
+            selector: { text: {} },
+          },
+          {
+            name: 'transcription_padding',
+            selector: {
+              number: { min: 0, max: 32, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+            },
+          },
+        ],
+      },
 
-    var pipelineOptions = '<option value="">Default Pipeline</option>';
-    for (var i = 0; i < this._pipelines.length; i++) {
-      var p = this._pipelines[i];
-      var sel = p.id === cfg.pipeline_id ? ' selected' : '';
-      pipelineOptions += '<option value="' + p.id + '"' + sel + '>' + (p.name || p.id) + '</option>';
-    }
+      // --- Response Bubble ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Response Bubble',
+        flatten: true,
+        schema: [
+          {
+            name: 'show_response',
+            selector: { boolean: {} },
+          },
+          {
+            name: 'streaming_response',
+            selector: { boolean: {} },
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'response_font_size',
+                selector: {
+                  number: { min: 10, max: 48, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+                },
+              },
+              {
+                name: 'response_font_family',
+                selector: { text: {} },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'response_font_color',
+                selector: { text: {} },
+              },
+              {
+                name: 'response_background',
+                selector: { text: {} },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'response_font_bold',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'response_font_italic',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'response_rounded',
+                selector: { boolean: {} },
+              },
+            ],
+          },
+          {
+            name: 'response_border_color',
+            selector: { text: {} },
+          },
+          {
+            name: 'response_padding',
+            selector: {
+              number: { min: 0, max: 32, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+            },
+          },
+        ],
+      },
+    ],
 
-    var mediaPlayerOptions = '<option value=""' + (!cfg.tts_target ? ' selected' : '') + '>Browser (default)</option>';
-    if (this._hass) {
-      var states = this._hass.states || {};
-      var entityIds = Object.keys(states).filter(function (id) {
-        return id.startsWith('media_player.');
-      }).sort();
-      for (var m = 0; m < entityIds.length; m++) {
-        var eid = entityIds[m];
-        var friendly = states[eid].attributes.friendly_name || eid;
-        var mSel = eid === cfg.tts_target ? ' selected' : '';
-        mediaPlayerOptions += '<option value="' + eid + '"' + mSel + '>' + friendly + '</option>';
-      }
-    }
+    computeLabel: function (schema) {
+      var labels = {
+        pipeline_id: 'Assist Pipeline',
+        start_listening_on_load: 'Start listening on load',
+        wake_word_switch: 'Wake word switch entity',
+        state_entity: 'State tracking entity',
+        continue_conversation: 'Continue conversation mode',
+        double_tap_cancel: 'Double-tap to cancel interaction',
+        debug: 'Debug logging',
+        tts_target: 'TTS output device',
+        chime_volume: 'Chime volume',
+        tts_volume: 'TTS volume',
+        chime_on_wake_word: 'Chime on wake word',
+        chime_on_request_sent: 'Chime on request sent',
+        noise_suppression: 'Noise suppression',
+        echo_cancellation: 'Echo cancellation',
+        auto_gain_control: 'Auto gain control',
+        voice_isolation: 'Voice isolation (Chrome only)',
+        pipeline_timeout: 'Pipeline timeout',
+        pipeline_idle_timeout: 'Idle restart timeout',
+        bar_position: 'Bar position',
+        bar_height: 'Bar height',
+        bar_gradient: 'Gradient colors',
+        background_blur: 'Background blur',
+        background_blur_intensity: 'Blur intensity',
+        show_transcription: 'Show transcription',
+        transcription_font_size: 'Font size',
+        transcription_font_family: 'Font family',
+        transcription_font_color: 'Font color',
+        transcription_background: 'Background color',
+        transcription_font_bold: 'Bold',
+        transcription_font_italic: 'Italic',
+        transcription_rounded: 'Rounded corners',
+        transcription_border_color: 'Border color',
+        transcription_padding: 'Padding',
+        show_response: 'Show response',
+        streaming_response: 'Streaming response',
+        response_font_size: 'Font size',
+        response_font_family: 'Font family',
+        response_font_color: 'Font color',
+        response_background: 'Background color',
+        response_font_bold: 'Bold',
+        response_font_italic: 'Italic',
+        response_rounded: 'Rounded corners',
+        response_border_color: 'Border color',
+        response_padding: 'Padding',
+      };
+      return labels[schema.name] || undefined;
+    },
 
-    var wakeWordSwitchOptions = this._entityOptions(cfg.wake_word_switch, ['switch.', 'input_boolean.']);
-    var stateEntityOptions = this._entityOptions(cfg.state_entity, ['input_text.']);
-
-    this.innerHTML =
-      '<style>' +
-      '.vs-editor { padding: 16px; }' +
-      '.vs-section { margin-bottom: 16px; padding: 12px; background: var(--card-background-color, #fff); border-radius: 8px; border: 1px solid var(--divider-color, #e0e0e0); }' +
-      '.vs-section-title { font-weight: bold; font-size: 14px; margin-bottom: 12px; color: var(--primary-color, #03a9f4); }' +
-      '.vs-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; min-height: 36px; }' +
-      '.vs-row label { flex: 1; font-size: 14px; }' +
-      '.vs-row input[type="checkbox"] { width: 20px; height: 20px; }' +
-      '.vs-row input[type="number"], .vs-row input[type="text"], .vs-row input[type="color"], .vs-row select { width: 160px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--divider-color, #ccc); background: var(--card-background-color, #fff); color: var(--primary-text-color, #333); }' +
-      '.vs-row input[type="range"] { width: 120px; }' +
-      '.vs-row .range-val { width: 32px; text-align: right; font-size: 13px; }' +
-      '</style>' +
-      '<div class="vs-editor">' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Behavior</div>' +
-      this._selectRow('Pipeline', 'pipeline_id', pipelineOptions) +
-      this._checkboxRow('Start listening on load', 'start_listening_on_load') +
-      this._selectRow('Wake word switch entity', 'wake_word_switch', wakeWordSwitchOptions) +
-      this._selectRow('State tracking entity', 'state_entity', stateEntityOptions) +
-      this._checkboxRow('Continue conversation mode', 'continue_conversation') +
-      this._checkboxRow('Double-tap screen to cancel interaction', 'double_tap_cancel') +
-      this._checkboxRow('Debug logging', 'debug') +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Microphone Processing</div>' +
-      this._checkboxRow('Noise suppression', 'noise_suppression') +
-      this._checkboxRow('Echo cancellation', 'echo_cancellation') +
-      this._checkboxRow('Auto gain control', 'auto_gain_control') +
-      this._checkboxRow('Voice isolation (Chrome only)', 'voice_isolation') +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Timeouts</div>' +
-      this._numberRow('Server-side pipeline timeout (s)', 'pipeline_timeout', 0, 300) +
-      this._numberRow('Client-side idle restart (s)', 'pipeline_idle_timeout', 0, 3600) +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Volume & Chimes</div>' +
-      this._selectRow('TTS output device (Experimental)', 'tts_target', mediaPlayerOptions) +
-      this._sliderRow('Chime volume', 'chime_volume', 0, 100) +
-      this._sliderRow('TTS volume', 'tts_volume', 0, 100) +
-      this._checkboxRow('Chime on wake word', 'chime_on_wake_word') +
-      this._checkboxRow('Chime on request sent', 'chime_on_request_sent') +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Rainbow Bar</div>' +
-      this._selectRowRaw('Position', 'bar_position',
-        '<option value="bottom"' + (cfg.bar_position === 'bottom' ? ' selected' : '') + '>Bottom</option>' +
-        '<option value="top"' + (cfg.bar_position === 'top' ? ' selected' : '') + '>Top</option>'
-      ) +
-      this._sliderRow('Height (px)', 'bar_height', 2, 40) +
-      this._textRow('Gradient colors', 'bar_gradient', '#FF7777, #FF9977, ...') +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Transcription Bubble</div>' +
-      this._checkboxRow('Show transcription', 'show_transcription') +
-      this._sliderRow('Font size', 'transcription_font_size', 10, 48) +
-      this._textRow('Font family', 'transcription_font_family', 'inherit') +
-      this._colorRow('Font color', 'transcription_font_color') +
-      this._checkboxRow('Bold', 'transcription_font_bold') +
-      this._checkboxRow('Italic', 'transcription_font_italic') +
-      this._colorRow('Background', 'transcription_background') +
-      this._textRow('Border color', 'transcription_border_color', 'rgba(0,180,255,0.5)') +
-      this._sliderRow('Padding', 'transcription_padding', 0, 32) +
-      this._checkboxRow('Rounded corners', 'transcription_rounded') +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Response Bubble</div>' +
-      this._checkboxRow('Show response', 'show_response') +
-      this._checkboxRow('Streaming response', 'streaming_response') +
-      this._sliderRow('Font size', 'response_font_size', 10, 48) +
-      this._textRow('Font family', 'response_font_family', 'inherit') +
-      this._colorRow('Font color', 'response_font_color') +
-      this._checkboxRow('Bold', 'response_font_bold') +
-      this._checkboxRow('Italic', 'response_font_italic') +
-      this._colorRow('Background', 'response_background') +
-      this._textRow('Border color', 'response_border_color', 'rgba(100,200,150,0.5)') +
-      this._sliderRow('Padding', 'response_padding', 0, 32) +
-      this._checkboxRow('Rounded corners', 'response_rounded') +
-      '</div>' +
-
-      '<div class="vs-section">' +
-      '<div class="vs-section-title">Background</div>' +
-      this._checkboxRow('Background blur', 'background_blur') +
-      this._sliderRow('Blur intensity', 'background_blur_intensity', 0, 20) +
-      '</div>' +
-
-      '</div>';
-
-    this._attachListeners();
-  }
-
-  _checkboxRow(label, key) {
-    var checked = this._config[key] ? ' checked' : '';
-    return '<div class="vs-row"><label>' + label + '</label><input type="checkbox" data-key="' + key + '"' + checked + '></div>';
-  }
-
-  _textRow(label, key, placeholder) {
-    var val = this._config[key] || '';
-    return '<div class="vs-row"><label>' + label + '</label><input type="text" data-key="' + key + '" value="' + this._escAttr(val) + '" placeholder="' + (placeholder || '') + '"></div>';
-  }
-
-  _numberRow(label, key, min, max) {
-    var val = this._config[key] !== undefined ? this._config[key] : '';
-    return '<div class="vs-row"><label>' + label + '</label><input type="number" data-key="' + key + '" value="' + val + '" min="' + min + '" max="' + max + '"></div>';
-  }
-
-  _sliderRow(label, key, min, max) {
-    var val = this._config[key] !== undefined ? this._config[key] : min;
-    return '<div class="vs-row"><label>' + label + '</label><input type="range" data-key="' + key + '" min="' + min + '" max="' + max + '" value="' + val + '"><span class="range-val" data-range-for="' + key + '">' + val + '</span></div>';
-  }
-
-  _colorRow(label, key) {
-    var val = this._config[key] || '#000000';
-    return '<div class="vs-row"><label>' + label + '</label><input type="color" data-key="' + key + '" value="' + val + '"></div>';
-  }
-
-  _selectRow(label, key, options) {
-    return '<div class="vs-row"><label>' + label + '</label><select data-key="' + key + '">' + options + '</select></div>';
-  }
-
-  _selectRowRaw(label, key, options) {
-    return '<div class="vs-row"><label>' + label + '</label><select data-key="' + key + '">' + options + '</select></div>';
-  }
-
-  _entityOptions(currentValue, prefixes) {
-    var options = '<option value=""' + (!currentValue ? ' selected' : '') + '>None</option>';
-    if (!this._hass) return options;
-
-    var states = this._hass.states || {};
-    var entityIds = Object.keys(states).filter(function (id) {
-      for (var i = 0; i < prefixes.length; i++) {
-        if (id.startsWith(prefixes[i])) return true;
-      }
-      return false;
-    }).sort();
-
-    for (var i = 0; i < entityIds.length; i++) {
-      var eid = entityIds[i];
-      var friendly = states[eid].attributes.friendly_name || eid;
-      var sel = eid === currentValue ? ' selected' : '';
-      options += '<option value="' + eid + '"' + sel + '>' + friendly + '</option>';
-    }
-    return options;
-  }
-
-  _escAttr(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  _attachListeners() {
-    var self = this;
-
-    this.querySelectorAll('input[type="checkbox"]').forEach(function (el) {
-      el.addEventListener('change', function () {
-        self._updateConfig(el.dataset.key, el.checked);
-      });
-    });
-
-    this.querySelectorAll('input[type="text"]').forEach(function (el) {
-      el.addEventListener('change', function () {
-        self._updateConfig(el.dataset.key, el.value);
-      });
-    });
-
-    this.querySelectorAll('input[type="number"]').forEach(function (el) {
-      el.addEventListener('change', function () {
-        self._updateConfig(el.dataset.key, parseInt(el.value, 10) || 0);
-      });
-    });
-
-    this.querySelectorAll('input[type="range"]').forEach(function (el) {
-      el.addEventListener('input', function () {
-        var span = self.querySelector('[data-range-for="' + el.dataset.key + '"]');
-        if (span) span.textContent = el.value;
-      });
-      el.addEventListener('change', function () {
-        self._updateConfig(el.dataset.key, parseInt(el.value, 10));
-      });
-    });
-
-    this.querySelectorAll('input[type="color"]').forEach(function (el) {
-      el.addEventListener('change', function () {
-        self._updateConfig(el.dataset.key, el.value);
-      });
-    });
-
-    this.querySelectorAll('select').forEach(function (el) {
-      el.addEventListener('change', function () {
-        self._updateConfig(el.dataset.key, el.value);
-      });
-    });
-  }
-
-  _updateConfig(key, value) {
-    this._config = Object.assign({}, this._config);
-    this._config[key] = value;
-
-    var event = new CustomEvent('config-changed', {
-      detail: { config: this._config },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(event);
-  }
+    computeHelper: function (schema) {
+      var helpers = {
+        wake_word_switch: 'Turn OFF this switch when wake word is detected (e.g., Fully Kiosk screensaver)',
+        state_entity: 'Updates with ACTIVE/IDLE for per-device automations',
+        tts_target: 'Leave empty for browser audio, or select a media player entity',
+        pipeline_timeout: 'Max seconds to wait for pipeline response (0 = no timeout)',
+        pipeline_idle_timeout: 'Seconds before pipeline restarts to keep connection fresh',
+        bar_gradient: 'Comma-separated CSS color values',
+        voice_isolation: 'AI-based voice isolation, currently only available in Chrome',
+        transcription_font_family: 'CSS font-family value (e.g., inherit, Arial, monospace)',
+        transcription_border_color: 'CSS color value (supports rgba)',
+        response_font_family: 'CSS font-family value (e.g., inherit, Arial, monospace)',
+        response_border_color: 'CSS color value (supports rgba)',
+      };
+      return helpers[schema.name] || undefined;
+    },
+  };
 }

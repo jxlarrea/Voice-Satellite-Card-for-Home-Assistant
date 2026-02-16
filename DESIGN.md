@@ -49,7 +49,7 @@ voice-satellite-card/
 │   ├── styles.css                    ← CSS styles (imported as raw string via webpack)
 │   ├── double-tap.js                 ← DoubleTapHandler (cancel with touch dedup)
 │   ├── visibility.js                 ← VisibilityManager (tab pause/resume)
-│   └── editor.js                     ← VoiceSatelliteCardEditor (visual config)
+│   └── editor.js                     ← getConfigForm() schema (native HA selectors)
 ├── voice-satellite-card.min.js       ← Built output (minified, committed)
 ├── voice-satellite-card.js           ← Built output (readable, gitignored)
 ├── voice-satellite-card.js.map       ← Source map (gitignored)
@@ -86,7 +86,7 @@ The main `VoiceSatelliteCard` class is a thin orchestrator. All functionality is
 | `AudioManager` | `card.audio` | Mic capture, AudioWorklet/ScriptProcessor, resample, binary send |
 | `TtsManager` | `card.tts` | Browser/remote TTS playback, chimes, streaming TTS |
 | `PipelineManager` | `card.pipeline` | Pipeline lifecycle, event handling, idle timeout, error recovery |
-| `UIManager` | `card.ui` | Global overlay, rainbow bar, blur, start button |
+| `UIManager` | `card.ui` | Global overlay, activity bar, blur, start button |
 | `ChatManager` | `card.chat` | Chat bubbles, streaming fade, legacy wrappers |
 | `DoubleTapHandler` | `card.doubleTap` | Double-tap cancel with touch/click dedup |
 | `VisibilityManager` | `card.visibility` | Tab visibility pause/resume |
@@ -107,7 +107,7 @@ The `connection` getter includes a fallback: if `this._connection` is null (e.g.
 
 ```javascript
 customElements.define('voice-satellite-card', VoiceSatelliteCard);
-customElements.define('voice-satellite-card-editor', VoiceSatelliteCardEditor);
+customElements.define('voice-satellite-card', VoiceSatelliteCard);
 window.customCards = window.customCards || [];
 window.customCards.push({ type: 'voice-satellite-card', name: 'Voice Satellite Card', ... });
 console.info('%c VOICE-SATELLITE-CARD %c v' + VERSION + ' ', ...);  // styled banner
@@ -734,7 +734,7 @@ Three global flags prevent this:
 | `auto_gain_control` | boolean | `true` | Browser automatic gain control |
 | `voice_isolation` | boolean | `false` | AI voice isolation (Chrome only) |
 
-### Rainbow Bar
+### Activity Bar
 
 | Key | Type | Default |
 |-----|------|---------|
@@ -948,7 +948,7 @@ Errors are caught and logged via `logger.error('state_entity', ...)`. If `state_
 
 ### 18.4 Editor
 
-The visual editor shows a dropdown filtered to `input_text.*` entities, with a "None" option.
+The visual editor uses the native HA `entity` selector filtered to `input_text` domain.
 
 ### 18.5 Setup
 
@@ -978,7 +978,7 @@ Categories: `state`, `lifecycle`, `mic`, `pipeline`, `event`, `error`, `recovery
 
 ## 20. Visual Editor
 
-The card provides a visual configuration editor (`VoiceSatelliteCardEditor`, defined in `src/editor.js`) with collapsible sections: Behavior (including continue conversation and double-tap cancel toggles), Microphone Processing (including voice isolation), Timeouts (with server-side/client-side labels), Volume & Chimes (including TTS output device dropdown), Rainbow Bar, Transcription Bubble, Response Bubble, Background. The editor fetches available pipelines from HA for the pipeline dropdown, lists `media_player.*` entities for the TTS output device dropdown, lists `switch.*` and `input_boolean.*` entities for the wake word switch picker, and lists `input_text.*` entities for the state tracking entity picker. Entity dropdowns are built by the shared `_entityOptions(currentValue, prefixes)` helper which filters `hass.states` by domain prefix and includes a "None" option.
+The card uses Home Assistant's built-in form editor via the `getConfigForm()` static method (defined in `src/editor.js`). Instead of a custom HTML editor element, the card returns a schema object that HA renders using native selectors — entity pickers, boolean toggles, number sliders, select dropdowns, and text inputs. The Behavior fields (pipeline, entity pickers, toggles) are always visible at the top level. The remaining settings are organized into expandable sections: Volume & Chimes, Microphone Processing, Timeouts, Activity Bar, Transcription Bubble, and Response Bubble. Entity fields use the native `entity` selector with domain filters (e.g., `input_text` for state_entity, `switch`/`input_boolean` for wake_word_switch, `media_player` for tts_target). The pipeline picker uses the native `assist_pipeline` selector. Labels and helper text are provided via `computeLabel` and `computeHelper` callbacks. No custom element registration is needed — HA handles all rendering, validation, and config-changed events automatically.
 
 ---
 
@@ -1046,5 +1046,5 @@ When recreating or modifying this card, verify:
 - [ ] `state_entity` updates to `IDLE` on normal TTS completion and double-tap cancel
 - [ ] `state_entity` stays `ACTIVE` during continue conversation (no IDLE between turns)
 - [ ] `card.updateInteractionState()` is a no-op when `state_entity` is empty (zero overhead)
-- [ ] Editor `_entityOptions()` filters entities by domain prefix and includes "None" option
+- [ ] Editor uses native `entity` selector filtered to `input_text` domain for state_entity
 - [ ] Wake word switch dropdown shows `switch.*` and `input_boolean.*` entities

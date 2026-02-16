@@ -52,7 +52,7 @@ graph TD
 - **Wake Word Detection** - Uses Home Assistant's already configured wake word detection (like Wyoming openWakeWord) for server-side processing.
 - **Works Across Views** - Pipeline stays active when switching dashboard views.
 - **Auto-Start** - Automatically begins listening on page load (with fallback button).
-- **Visual Feedback** - Customizable rainbow gradient bar shows listening/processing/speaking states.
+- **Visual Feedback** - Customizable gradient activity bar shows listening/processing/speaking states.
 - **Transcription Display** - Shows what was understood in a styled bubble.
 - **Continue Conversation** - When the assistant asks a follow-up question, the card automatically listens for a response without requiring the wake word again. Conversation history is displayed in a chat-style interface.
 - **Screensaver Control** - Optionally turn off Fully Kiosk screensaver when wake word is detected.

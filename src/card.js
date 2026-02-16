@@ -14,6 +14,7 @@ import { UIManager } from './ui.js';
 import { ChatManager } from './chat.js';
 import { DoubleTapHandler } from './double-tap.js';
 import { VisibilityManager } from './visibility.js';
+import { getConfigForm } from './editor.js';
 
 export class VoiceSatelliteCard extends HTMLElement {
   constructor() {
@@ -127,8 +128,8 @@ export class VoiceSatelliteCard extends HTMLElement {
     return 0;
   }
 
-  static getConfigElement() {
-    return document.createElement('voice-satellite-card-editor');
+  static getConfigForm() {
+    return getConfigForm();
   }
 
   static getStubConfig() {
