@@ -96,7 +96,7 @@ Each manager receives the card instance via its constructor and accesses other m
 
 **Callback pattern:** Managers that need to notify the card use explicit callback methods rather than events:
 
-- `TtsManager` → `card.onTTSComplete()` — playback finished, clean up UI or continue conversation
+- `TtsManager` → `card.onTTSComplete(playbackFailed)` — playback finished (or failed), clean up UI or continue conversation
 - `DoubleTapHandler` → `card.setState()`, `card.pipeline.restart()`, `card.updateInteractionState('IDLE')` — cancel interaction
 - `VisibilityManager` → `card.setState()`, `card.pipeline.restart()` — resume after tab switch
 
@@ -828,11 +828,13 @@ A boolean `tts.isPlaying` flag tracks whether TTS is active, regardless of playb
 
 `tts._currentAudio` is only used internally for browser `Audio` element management. `tts._endTimer` is only used for remote playback's 2-second UI cleanup delay.
 
-**`tts.stop()` behavior:** Sets `_playing = false`. Clears `_endTimer`. For browser audio: nulls `onended`/`onerror` handlers (prevents ghost callbacks), pauses, sets `src = ''`, nulls `_currentAudio`. For remote playback: calls `media_player.media_stop` on the target entity. Both paths are executed — the method handles all cleanup regardless of which playback method was active.
+**`tts.stop()` behavior:** Sets `_playing = false`. Clears `_playbackWatchdog` and `_endTimer`. For browser audio: nulls `onended`/`onerror` handlers (prevents ghost callbacks), pauses, sets `src = ''`, nulls `_currentAudio`. For remote playback: calls `media_player.media_stop` on the target entity. Both paths are executed — the method handles all cleanup regardless of which playback method was active.
 
 ### 15.6 Cleanup
 
-`TtsManager._onComplete()` clears `tts._currentAudio`, sets `tts._playing` to false, cancels `tts._endTimer` if pending, then calls `card.onTTSComplete()`.
+`TtsManager._onComplete(playbackFailed)` clears `tts._currentAudio`, sets `tts._playing` to false, cancels `tts._endTimer` if pending, then calls `card.onTTSComplete(playbackFailed)`. The `playbackFailed` flag is `true` when browser `Audio.play()` was rejected (e.g. `NotAllowedError` from Companion App WebView autoplay policy), signaling that the continue-conversation path should be skipped.
+
+`TtsManager._playbackWatchdog` is a 30-second safety timer started alongside browser playback. If neither `onended`, `onerror`, nor the `.catch()` fires, the watchdog forces `_onComplete()`. Cleared by `_clearWatchdog()` on normal completion, error, `.catch()`, or `stop()`.
 
 `card.onTTSComplete()` then checks if a new interaction is already in progress (barge-in — current state is WAKE_WORD_DETECTED, STT, INTENT, or TTS). If so, it returns — the UI belongs to the new interaction.
 
@@ -1057,3 +1059,8 @@ When recreating or modifying this card, verify:
 - [ ] `card.updateInteractionState()` is a no-op when `state_entity` is empty (zero overhead)
 - [ ] Editor uses native `entity` selector filtered to `input_text` domain for state_entity
 - [ ] Wake word switch dropdown shows `switch.*` and `input_boolean.*` entities
+- [ ] `tts._playbackWatchdog` (30s) forces `_onComplete()` if no browser audio events fire
+- [ ] `tts._clearWatchdog()` called on `onended`, `onerror`, `.catch()`, and `stop()`
+- [ ] `tts._onComplete(true)` called with `playbackFailed` flag when `play()` promise rejects
+- [ ] `card.onTTSComplete(playbackFailed)` barge-in guard excludes `State.TTS` (only checks WAKE_WORD_DETECTED, STT, INTENT)
+- [ ] `card.onTTSComplete(playbackFailed)` skips continue-conversation when `playbackFailed` is true
