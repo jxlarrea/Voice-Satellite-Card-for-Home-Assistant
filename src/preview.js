@@ -79,13 +79,56 @@ export function renderPreview(shadowRoot, config) {
       '">It\'s 72°F and sunny.</div>';
   }
 
+  var timerHtml = '';
+  if (cfg.satellite_entity) {
+    var timerPosition = cfg.timer_position || 'top-right';
+    var timerPosStyle = '';
+    var barH = cfg.bar_height || 16;
+    var gap = 12;
+    if (timerPosition.indexOf('top') >= 0) {
+      var topOffset = (cfg.bar_position === 'top') ? (barH + gap) : gap;
+      timerPosStyle += 'top:' + topOffset + 'px;bottom:auto;';
+    } else {
+      var bottomOffset = (cfg.bar_position === 'bottom') ? (barH + gap) : gap;
+      timerPosStyle += 'bottom:' + bottomOffset + 'px;top:auto;';
+    }
+    if (timerPosition.indexOf('left') >= 0) {
+      timerPosStyle += 'left:' + gap + 'px;right:auto;';
+    } else {
+      timerPosStyle += 'right:' + gap + 'px;left:auto;';
+    }
+
+    timerHtml =
+      '<div class="preview-timer" style="' +
+      'position:absolute;' + timerPosStyle +
+      'font-size:' + cfg.timer_font_size + 'px;' +
+      'font-family:' + cfg.timer_font_family + ';' +
+      'color:' + cfg.timer_font_color + ';' +
+      'font-weight:' + (cfg.timer_font_bold ? 'bold' : 'normal') + ';' +
+      'font-style:' + (cfg.timer_font_italic ? 'italic' : 'normal') + ';' +
+      'background:' + cfg.timer_background + ';' +
+      'border: 3px solid ' + cfg.timer_border_color + ';' +
+      'padding:' + cfg.timer_padding + 'px;' +
+      (cfg.timer_rounded ? 'border-radius: 12px;' : '') +
+      'overflow:hidden;z-index:2;' +
+      'box-shadow: 0 4px 12px rgba(0,0,0,0.15);' +
+      '">' +
+      '<div style="position:absolute;top:0;left:0;bottom:0;width:65%;background:' +
+      (cfg.timer_border_color || 'rgba(100,200,150,0.5)') + ';opacity:0.3;"></div>' +
+      '<div style="position:relative;display:flex;align-items:center;gap:6px;">' +
+      '<span>⏱</span>' +
+      '<span>04:32</span>' +
+      '</div>' +
+      '</div>';
+  }
+
   shadowRoot.innerHTML =
     '<style>' +
     ':host { display: block; }' +
     '.preview-container {' +
     '  position: relative;' +
     '  width: 100%;' +
-    '  height: 180px;' +
+    '  height: 300px;' +
     '  overflow: hidden;' +
     '  border-radius: var(--ha-card-border-radius, 12px);' +
     '  background: var(--card-background-color, #1c1c1c);' +
@@ -94,10 +137,14 @@ export function renderPreview(shadowRoot, config) {
     '  position: absolute;' +
     '  top: 0; left: 0; right: 0; bottom: 0;' +
     '  background-image:' +
-    '    radial-gradient(circle at 20% 40%, var(--primary-color, #03a9f4) 0%, transparent 50%),' +
-    '    radial-gradient(circle at 75% 30%, var(--accent-color, #ff9800) 0%, transparent 40%),' +
-    '    radial-gradient(circle at 50% 80%, var(--info-color, #4fc3f7) 0%, transparent 45%);' +
-    '  opacity: 0.5;' +
+    '    linear-gradient(45deg, #808080 25%, transparent 25%),' +
+    '    linear-gradient(-45deg, #808080 25%, transparent 25%),' +
+    '    linear-gradient(45deg, transparent 75%, #808080 75%),' +
+    '    linear-gradient(-45deg, transparent 75%, #808080 75%);' +
+    '  background-size: 40px 40px;' +
+    '  background-position: 0 0, 0 20px, 20px -20px, -20px 0px;' +
+    '  background-color: #a0a0a0;' +
+    '  opacity: 0.4;' +
     '}' +
     '.preview-blur {' +
     '  position: absolute;' +
@@ -121,11 +168,12 @@ export function renderPreview(shadowRoot, config) {
     '  flex-direction: column;' +
     '  align-items: center;' +
     '  gap: 8px;' +
-    '  width: 85%;' +
+    '  width: 90%;' +
     '}' +
     '.preview-bubble {' +
-    '  max-width: 90%;' +
+    '  max-width: 100%;' +
     '  text-align: center;' +
+    '  line-height: 1.2;' +
     '  box-shadow: 0 4px 12px rgba(0,0,0,0.15);' +
     '}' +
     '@keyframes preview-flow {' +
@@ -141,5 +189,6 @@ export function renderPreview(shadowRoot, config) {
     responseHtml +
     '</div>' +
     '<div class="preview-bar"></div>' +
+    timerHtml +
     '</div>';
 }

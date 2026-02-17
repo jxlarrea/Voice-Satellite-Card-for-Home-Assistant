@@ -17,8 +17,23 @@ export function getConfigForm() {
         selector: { assist_pipeline: {} },
       },
       {
-        name: 'start_listening_on_load',
-        selector: { boolean: {} },
+        name: 'satellite_entity',
+        selector: {
+          entity: {
+            filter: {
+              domain: 'assist_satellite',
+              integration: 'voice_satellite',
+            },
+          },
+        },
+      },
+      {
+        name: 'state_entity',
+        selector: {
+          entity: {
+            filter: { domain: 'input_text' },
+          },
+        },
       },
       {
         name: 'wake_word_switch',
@@ -32,19 +47,7 @@ export function getConfigForm() {
         },
       },
       {
-        name: 'state_entity',
-        selector: {
-          entity: {
-            filter: { domain: 'input_text' },
-          },
-        },
-      },
-      {
         name: 'continue_conversation',
-        selector: { boolean: {} },
-      },
-      {
-        name: 'double_tap_cancel',
         selector: { boolean: {} },
       },
       {
@@ -162,6 +165,113 @@ export function getConfigForm() {
                 },
               },
             ],
+          },
+        ],
+      },
+
+      // --- Timer Pill ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Timer Pill (requires integration)',
+        flatten: true,
+        schema: [
+          {
+            name: 'timer_position',
+            selector: {
+              select: {
+                options: [
+                  { value: 'top-left', label: 'Top Left' },
+                  { value: 'top-right', label: 'Top Right' },
+                  { value: 'bottom-left', label: 'Bottom Left' },
+                  { value: 'bottom-right', label: 'Bottom Right' },
+                ],
+                mode: 'dropdown',
+              },
+            },
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'timer_font_size',
+                selector: {
+                  number: { min: 10, max: 48, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+                },
+              },
+              {
+                name: 'timer_font_family',
+                selector: { text: {} },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'timer_font_color',
+                selector: { text: {} },
+              },
+              {
+                name: 'timer_background',
+                selector: { text: {} },
+              },
+            ],
+          },
+          {
+            type: 'grid',
+            name: '',
+            flatten: true,
+            schema: [
+              {
+                name: 'timer_font_bold',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'timer_font_italic',
+                selector: { boolean: {} },
+              },
+              {
+                name: 'timer_rounded',
+                selector: { boolean: {} },
+              },
+            ],
+          },
+          {
+            name: 'timer_border_color',
+            selector: { text: {} },
+          },
+          {
+            name: 'timer_padding',
+            selector: {
+              number: { min: 0, max: 32, step: 1, unit_of_measurement: 'px', mode: 'slider' },
+            },
+          },
+          {
+            name: 'timer_finished_duration',
+            selector: {
+              number: { min: 0, max: 300, step: 1, unit_of_measurement: 's', mode: 'box' },
+            },
+          },
+        ],
+      },
+
+      // --- Announcements ---
+      {
+        type: 'expandable',
+        name: '',
+        title: 'Announcements (requires integration)',
+        flatten: true,
+        schema: [
+          {
+            name: 'announcement_display_duration',
+            selector: {
+              number: { min: 1, max: 60, step: 1, unit_of_measurement: 's', mode: 'slider' },
+            },
           },
         ],
       },
@@ -380,11 +490,22 @@ export function getConfigForm() {
     computeLabel: function (schema) {
       var labels = {
         pipeline_id: 'Assist Pipeline',
-        start_listening_on_load: 'Start listening on load',
         wake_word_switch: 'Wake word switch entity',
         state_entity: 'State tracking entity',
+        satellite_entity: 'Satellite entity',
+        timer_font_size: 'Font size',
+        timer_position: 'Timer position',
+        timer_font_family: 'Font family',
+        timer_font_color: 'Font color',
+        timer_background: 'Background color',
+        timer_font_bold: 'Bold',
+        timer_font_italic: 'Italic',
+        timer_rounded: 'Rounded corners',
+        timer_border_color: 'Border color',
+        timer_padding: 'Padding',
+        timer_finished_duration: 'Auto-dismiss timer',
+        announcement_display_duration: 'Announcement display duration',
         continue_conversation: 'Continue conversation mode',
-        double_tap_cancel: 'Double-tap to cancel interaction',
         debug: 'Debug logging',
         tts_target: 'TTS output device',
         chime_volume: 'Chime volume',
@@ -431,6 +552,11 @@ export function getConfigForm() {
       var helpers = {
         wake_word_switch: 'Turn OFF this switch when wake word is detected (e.g., Fully Kiosk screensaver)',
         state_entity: 'Updates with ACTIVE/IDLE for per-device automations',
+        satellite_entity: 'Requires Voice Satellite Card Integration. Enables timers and announcements. https://github.com/jxlarrea/voice-satellite-card-integration',
+        timer_font_family: 'CSS font-family value (e.g., inherit, Arial, monospace)',
+        timer_border_color: 'CSS color value (supports rgba)',
+        timer_finished_duration: 'Seconds to show finished timer alert (0 = until dismissed)',
+        announcement_display_duration: 'Seconds to show announcement bubble after playback',
         tts_target: 'Leave empty for browser audio, or select a media player entity',
         pipeline_timeout: 'Max seconds to wait for pipeline response (0 = no timeout)',
         pipeline_idle_timeout: 'Seconds before pipeline restarts to keep connection fresh',

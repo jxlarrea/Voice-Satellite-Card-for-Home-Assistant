@@ -55,6 +55,28 @@ export class PipelineManager {
 
   // --- Start / Stop / Restart ---
 
+  async _resolveDeviceId() {
+    var config = this._card.config;
+    if (!config.satellite_entity) return null;
+
+    var connection = this._card.connection;
+    if (!connection) return null;
+
+    try {
+      var entity = await connection.sendMessagePromise({
+        type: 'config/entity_registry/get',
+        entity_id: config.satellite_entity,
+      });
+      if (entity && entity.device_id) {
+        this._log.log('pipeline', 'Resolved device_id: ' + entity.device_id + ' from ' + config.satellite_entity);
+        return entity.device_id;
+      }
+    } catch (e) {
+      this._log.error('pipeline', 'Failed to resolve device_id from ' + config.satellite_entity + ': ' + e);
+    }
+    return null;
+  }
+
   async start(options) {
     var self = this;
     var opts = options || {};
@@ -96,6 +118,12 @@ export class PipelineManager {
 
     if (opts.conversation_id) {
       runConfig.conversation_id = opts.conversation_id;
+    }
+
+    // Resolve device_id from satellite entity for timer support
+    var deviceId = await this._resolveDeviceId();
+    if (deviceId) {
+      runConfig.device_id = deviceId;
     }
 
     if (runConfig.input.timeout === undefined) {
@@ -191,7 +219,7 @@ export class PipelineManager {
       }).catch(function (e) {
         self._log.error('pipeline', 'Continue conversation failed: ' + e);
         self._card.chat.clear();
-        self._card.ui.hideBlurOverlay();
+        self._card.ui.hideBlurOverlay('pipeline');
         self.restart(0);
       });
     });
@@ -282,7 +310,7 @@ export class PipelineManager {
       tts.playChime('wake');
     }
     this._card.turnOffWakeWordSwitch();
-    this._card.ui.showBlurOverlay();
+    this._card.ui.showBlurOverlay('pipeline');
   }
 
   handleSttEnd(eventData) {
@@ -395,7 +423,7 @@ export class PipelineManager {
 
     if (this._serviceUnavailable) {
       this._log.log('ui', 'Error recovery handling restart');
-      this._card.ui.hideBlurOverlay();
+      this._card.ui.hideBlurOverlay('pipeline');
       return;
     }
 
@@ -424,7 +452,7 @@ export class PipelineManager {
         this._log.log('ui', 'Cleaning up interaction UI after expected error');
         this._card.setState(State.IDLE);
         this._card.chat.clear();
-        this._card.ui.hideBlurOverlay();
+        this._card.ui.hideBlurOverlay('pipeline');
         this._shouldContinue = false;
         this._continueConversationId = null;
         var isRemote = this._card.config.tts_target && this._card.config.tts_target !== 'browser';
@@ -450,7 +478,7 @@ export class PipelineManager {
     this._card.ui.showErrorBar();
     this._serviceUnavailable = true;
     this._card.chat.clear();
-    this._card.ui.hideBlurOverlay();
+    this._card.ui.hideBlurOverlay('pipeline');
 
     this.restart(this._calculateRetryDelay());
   }
@@ -480,7 +508,7 @@ export class PipelineManager {
   _finishRunEnd() {
     this._pendingRunEnd = false;
     this._card.chat.clear();
-    this._card.ui.hideBlurOverlay();
+    this._card.ui.hideBlurOverlay('pipeline');
     this._card.setState(State.IDLE);
 
     if (this._serviceUnavailable) {

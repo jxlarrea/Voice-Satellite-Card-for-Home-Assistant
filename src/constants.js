@@ -22,6 +22,7 @@ export const DEFAULT_CONFIG = {
   start_listening_on_load: true,
   wake_word_switch: '',
   state_entity: '',
+  satellite_entity: '',
   pipeline_id: '',
   pipeline_timeout: 60,
   pipeline_idle_timeout: 300,
@@ -39,6 +40,22 @@ export const DEFAULT_CONFIG = {
   echo_cancellation: true,
   auto_gain_control: true,
   voice_isolation: false,
+
+  // Timer Pill
+  timer_position: 'bottom-right',
+  timer_font_size: 20,
+  timer_font_family: 'inherit',
+  timer_font_color: '#444444',
+  timer_font_bold: true,
+  timer_font_italic: false,
+  timer_background: '#ffffff',
+  timer_border_color: 'rgba(100, 200, 150, 0.5)',
+  timer_padding: 16,
+  timer_rounded: true,
+  timer_finished_duration: 60,
+
+  // Announcements
+  announcement_display_duration: 5,
 
   // Rainbow Bar
   bar_position: 'bottom',

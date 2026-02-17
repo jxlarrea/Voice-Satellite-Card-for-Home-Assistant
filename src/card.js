@@ -14,6 +14,8 @@ import { UIManager } from './ui.js';
 import { ChatManager } from './chat.js';
 import { DoubleTapHandler } from './double-tap.js';
 import { VisibilityManager } from './visibility.js';
+import { TimerManager } from './timer.js';
+import { AnnouncementManager } from './announcement.js';
 import { getConfigForm } from './editor.js';
 import { isEditorPreview, renderPreview } from './preview.js';
 
@@ -23,6 +25,7 @@ export class VoiceSatelliteCard extends HTMLElement {
 
     // Core state
     this._state = State.IDLE;
+    this._lastSyncedSatelliteState = null;
     this._config = Object.assign({}, DEFAULT_CONFIG);
     this._hass = null;
     this._connection = null;
@@ -40,6 +43,8 @@ export class VoiceSatelliteCard extends HTMLElement {
     this._chat = new ChatManager(this);
     this._doubleTap = new DoubleTapHandler(this);
     this._visibility = new VisibilityManager(this);
+    this._timer = new TimerManager(this);
+    this._announcement = new AnnouncementManager(this);
   }
 
   // --- Public accessors for managers ---
@@ -51,6 +56,8 @@ export class VoiceSatelliteCard extends HTMLElement {
   get ui() { return this._ui; }
   get chat() { return this._chat; }
   get config() { return this._config; }
+  get timer() { return this._timer; }
+  get announcement() { return this._announcement; }
   get currentState() { return this._state; }
   get connection() {
     if (!this._connection && this._hass && this._hass.connection) {
@@ -120,6 +127,12 @@ export class VoiceSatelliteCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
 
+    // Only update timer and announcements on the active card instance
+    if (!window._voiceSatelliteInstance || window._voiceSatelliteInstance === this) {
+      this._timer.update();
+      this._announcement.update();
+    }
+
     if (this._hasStarted) return;
     if (!hass || !hass.connection) return;
     if (window._voiceSatelliteStarting) return;
@@ -162,6 +175,26 @@ export class VoiceSatelliteCard extends HTMLElement {
     if (newState === State.WAKE_WORD_DETECTED) {
       this.updateInteractionState('ACTIVE');
     }
+
+    // Sync pipeline state to integration entity
+    // Don't sync back to idle/listening while TTS is still playing (barge-in restart)
+    if (this._tts.isPlaying && (newState === State.LISTENING || newState === State.IDLE)) return;
+    this._syncSatelliteState(newState);
+  }
+
+  _syncSatelliteState(state) {
+    var entityId = this._config.satellite_entity;
+    if (!entityId || !this._hass || !this._hass.connection) return;
+
+    // Skip if same state as last sync
+    if (state === this._lastSyncedSatelliteState) return;
+    this._lastSyncedSatelliteState = state;
+
+    this._hass.connection.sendMessagePromise({
+      type: 'voice_satellite/update_state',
+      entity_id: entityId,
+      state: state,
+    }).catch(function () {});
   }
 
   updateInteractionState(interactionState) {
@@ -217,9 +250,13 @@ export class VoiceSatelliteCard extends HTMLElement {
     }
 
     this._chat.clear();
-    this._ui.hideBlurOverlay();
+    this._ui.hideBlurOverlay('pipeline');
     this._ui.updateForState(this._state, this._pipeline.serviceUnavailable, false);
     this.updateInteractionState('IDLE');
+    this._syncSatelliteState('IDLE');
+
+    // Play any queued announcements now that the pipeline is idle
+    this._announcement.playQueued();
   }
 
   turnOffWakeWordSwitch() {

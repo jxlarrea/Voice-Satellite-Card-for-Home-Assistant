@@ -61,6 +61,8 @@ graph TD
 - **Visual Feedback** - Customizable gradient activity bar shows listening/processing/speaking states.
 - **Transcription Display** - Shows what was understood in a styled bubble.
 - **Continue Conversation** - When the assistant asks a follow-up question, the card automatically listens for a response without requiring the wake word again. Conversation history is displayed in a chat-style interface.
+- **Timers** - Voice-activated timers with on-screen countdown pills, alert chimes, and cancel via double-tap or voice. Requires the [companion integration](https://github.com/jxlarrea/voice-satellite-card-integration).
+- **Announcements** - Receive `assist_satellite.announce` service calls with pre-announcement chimes and TTS playback. Queues behind active conversations. Requires the [companion integration](https://github.com/jxlarrea/voice-satellite-card-integration).
 - **Screensaver Control** - Optionally turn off Fully Kiosk screensaver when wake word is detected.
 - **Configurable Chimes** - Audio feedback for wake word detection and request completion.
 - **State Tracking** - Expose the card's interaction state (`ACTIVE`/`IDLE`) to a Home Assistant entity for per-device automations.
@@ -72,6 +74,8 @@ Before using this card, ensure you have Home Assistant with the [Assist Pipeline
    - Speech-to-Text ([Whisper](https://www.home-assistant.io/integrations/whisper/), OpenAI, etc.)
    - Conversation agent ([Home Assistant](https://www.home-assistant.io/integrations/conversation/), OpenAI, Qwen, etc.)
    - Text-to-Speech ([Piper](https://www.home-assistant.io/integrations/piper/), Kokoro, etc.)
+
+For Timers and Announcements, the [Voice Satellite Card Integration](https://github.com/jxlarrea/voice-satellite-card-integration) is also required.
 
 ## Installation
 
@@ -114,22 +118,38 @@ That's it! The card will use your default Assist pipeline and start listening au
 type: custom:voice-satellite-card
 
 # Behavior
-start_listening_on_load: true      # Auto-start on page load
 pipeline_id: ''                    # Pipeline ID (empty = default pipeline)
-wake_word_switch: ''               # Switch to turn OFF when wake word detected
-                                   # e.g., 'switch.tablet_screensaver'
+satellite_entity: ''               # assist_satellite entity from companion integration
+                                   # Enables timers and announcements
 state_entity: ''                   # input_text entity to track interaction state (ACTIVE/IDLE)
                                    # e.g., 'input_text.voice_satellite_living_room'
+wake_word_switch: ''               # Switch to turn OFF when wake word detected
+                                   # e.g., 'switch.tablet_screensaver'
 pipeline_timeout: 60               # Server-side: max seconds for pipeline response (0 = no timeout)
 pipeline_idle_timeout: 300         # Client-side: seconds before pipeline restarts to keep TTS fresh (default 5 min)
 continue_conversation: true        # Continue listening after assistant asks a follow-up question
-double_tap_cancel: true            # Double-tap screen to cancel active interaction and stop TTS
 chime_on_wake_word: true           # Play chime when wake word detected
 chime_on_request_sent: true        # Play chime after request processed
 chime_volume: 100                  # Chime volume (0-100)
 tts_volume: 100                    # TTS playback volume (0-100)
 tts_target: ''                     # TTS output device (empty = browser, or media_player entity ID)
 debug: false                       # Show debug info in browser console
+
+# Timers (requires companion integration)
+timer_position: top-right          # 'top-left', 'top-right', 'bottom-left', 'bottom-right'
+timer_font_size: 24                # Font size in pixels
+timer_font_family: inherit         # CSS font family
+timer_font_color: '#333333'
+timer_font_bold: true
+timer_font_italic: false
+timer_background: '#ffffff'
+timer_border_color: 'rgba(0, 180, 255, 0.5)'
+timer_padding: 12                  # Padding in pixels
+timer_rounded: true                # Rounded corners
+timer_finished_duration: 60        # Seconds to show finished timer alert (0 = until dismissed)
+
+# Announcements (requires companion integration)
+announcement_display_duration: 5   # Seconds to show announcement bubble after playback
 
 # Microphone Processing
 noise_suppression: true            # Enable noise suppression
@@ -178,9 +198,7 @@ All options are also available in the visual card editor with a live preview tha
 
 ### Starting the Satellite
 
-**Auto-Start**: If `start_listening_on_load` is enabled (default), the card will automatically request microphone access and begin listening.
-
-**Manual Start**: If auto-start fails due to browser restrictions, a floating microphone button will appear. Click it to start.
+The card will automatically request microphone access and begin listening when loaded. If the browser blocks auto-start due to restrictions, a floating microphone button will appear — click it to start.
 
 ### Visual States
 
@@ -281,6 +299,48 @@ actions:
       is_volume_muted: false
 mode: single
 ```
+
+## [Companion Integration](https://github.com/jxlarrea/voice-satellite-card-integration) (Optional)
+
+Some features require the **[Voice Satellite Card Integration](https://github.com/jxlarrea/voice-satellite-card-integration)**, a separate custom component that registers your card as an `assist_satellite` entity in Home Assistant. This enables features that need server-side coordination:
+
+| Feature | Card Only | With Integration |
+|---------|-----------|-----------------|
+| Voice pipeline (wake word → STT → TTS) | ✅ | ✅ |
+| Transcription & response bubbles | ✅ | ✅ |
+| Continue conversation | ✅ | ✅ |
+| Visual feedback (activity bar, blur) | ✅ | ✅ |
+| Chimes | ✅ | ✅ |
+| State tracking | ✅ | ✅ |
+| **Timers** | ❌ | ✅ |
+| **Announcements** | ❌ | ✅ |
+
+### Timers
+
+With the integration configured, voice-activated timers work out of the box:
+
+- **Start**: "Set a 5 minute timer" or "Set a pizza timer for 10 minutes"
+- **Display**: Timer pills appear on screen with a live countdown
+- **Alert**: When a timer finishes, an alert chime plays and the pill flashes
+- **Cancel**: Double-tap the timer pill to cancel, or say "Cancel the timer"
+
+Timer appearance (position, font, colors, alert duration) is fully customizable in the card editor under **Timer Pill**.
+
+### Announcements
+
+The integration enables `assist_satellite.announce` support, letting you send TTS announcements to specific tablets:
+
+```yaml
+action: assist_satellite.announce
+target:
+  entity_id: assist_satellite.living_room_tablet
+data:
+  message: "Dinner is ready!"
+```
+
+Announcements include a pre-announcement chime (ding-dong), play the TTS message, and show the text on screen. If a voice interaction is in progress, the announcement queues and plays after the conversation ends.
+
+The display duration is configurable in the card editor under **Announcements**.
 
 ## Troubleshooting
 

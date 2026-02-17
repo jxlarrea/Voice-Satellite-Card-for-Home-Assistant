@@ -45,7 +45,7 @@ export class VisibilityManager {
       if (interactingStates.indexOf(this._card.currentState) !== -1) {
         this._log.log('visibility', 'Tab hidden during interaction — cleaning up UI');
         this._card.chat.clear();
-        this._card.ui.hideBlurOverlay();
+        this._card.ui.hideBlurOverlay('pipeline');
         this._card.pipeline.clearContinueState();
         if (this._card.tts.isPlaying) {
           this._card.tts.stop();

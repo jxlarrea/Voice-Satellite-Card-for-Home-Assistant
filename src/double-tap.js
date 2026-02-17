@@ -24,7 +24,10 @@ export class DoubleTapHandler {
       if (!self._card.config.double_tap_cancel) return;
 
       var activeStates = [State.WAKE_WORD_DETECTED, State.STT, State.INTENT, State.TTS];
-      if (activeStates.indexOf(self._card.currentState) === -1 && !self._card.tts.isPlaying) return;
+      var isActive = activeStates.indexOf(self._card.currentState) !== -1 || self._card.tts.isPlaying;
+      var isTimerAlert = self._card.timer.isAlertActive;
+
+      if (!isActive && !isTimerAlert) return;
 
       // Touch/click deduplication
       if (e.type === 'click' && self._lastTapWasTouch) return;
@@ -35,8 +38,16 @@ export class DoubleTapHandler {
       self._lastTapTime = now;
 
       if (timeSinceLastTap < 400 && timeSinceLastTap > 0) {
-        self._log.log('ui', 'Double-tap detected — cancelling interaction');
         e.preventDefault();
+
+        // Dismiss timer alert if active
+        if (self._card.timer.isAlertActive) {
+          self._log.log('ui', 'Double-tap detected — dismissing timer alert');
+          self._card.timer.dismissAlert();
+          return;
+        }
+
+        self._log.log('ui', 'Double-tap detected — cancelling interaction');
 
         if (self._card.tts.isPlaying) {
           self._card.tts.stop();
@@ -45,7 +56,7 @@ export class DoubleTapHandler {
         self._card.pipeline.clearContinueState();
         self._card.setState(State.IDLE);
         self._card.chat.clear();
-        self._card.ui.hideBlurOverlay();
+        self._card.ui.hideBlurOverlay('pipeline');
         self._card.updateInteractionState('IDLE');
 
         var isRemote = self._card.config.tts_target && self._card.config.tts_target !== 'browser';
