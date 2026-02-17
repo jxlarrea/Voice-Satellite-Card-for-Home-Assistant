@@ -164,3 +164,108 @@
     opacity: 0.7;
   }
 }
+
+/* Timer Pills */
+.vs-timer-container {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 10001;
+  pointer-events: none;
+}
+
+.vs-timer-pill {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: vs-timer-fade-in 0.3s ease forwards;
+  pointer-events: auto;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vs-timer-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  transition: width 1s linear;
+  pointer-events: none;
+}
+
+.vs-timer-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vs-timer-icon {
+  flex-shrink: 0;
+}
+
+.vs-timer-time {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.vs-timer-pill.vs-timer-expired {
+  animation: vs-timer-fade-out 0.4s ease forwards;
+}
+
+/* Timer Finished Alert */
+.vs-timer-alert {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  z-index: 10002;
+  animation: vs-timer-alert-pulse 1.5s ease-in-out infinite;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.vs-timer-alert .vs-timer-icon {
+  font-size: 1.5em;
+}
+
+.vs-timer-alert .vs-timer-time {
+  font-size: 1.2em;
+}
+
+@keyframes vs-timer-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vs-timer-fade-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes vs-timer-alert-pulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+}

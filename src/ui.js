@@ -164,16 +164,25 @@ export class UIManager {
     this._globalUI.querySelector('.vs-start-btn').classList.remove('visible');
   }
 
-  // --- Blur Overlay ---
+  // --- Blur Overlay (reference-counted) ---
 
-  showBlurOverlay() {
+  showBlurOverlay(reason) {
     if (!this._globalUI || !this._card.config.background_blur) return;
+    if (!this._blurReasons) this._blurReasons = {};
+    this._blurReasons[reason || 'default'] = true;
     this._globalUI.querySelector('.vs-blur-overlay').classList.add('visible');
   }
 
-  hideBlurOverlay() {
+  hideBlurOverlay(reason) {
     if (!this._globalUI) return;
-    this._globalUI.querySelector('.vs-blur-overlay').classList.remove('visible');
+    if (!this._blurReasons) this._blurReasons = {};
+    delete this._blurReasons[reason || 'default'];
+
+    // Only actually hide if no reasons remain
+    var keys = Object.keys(this._blurReasons);
+    if (keys.length === 0) {
+      this._globalUI.querySelector('.vs-blur-overlay').classList.remove('visible');
+    }
   }
 
   // --- Error Bar ---

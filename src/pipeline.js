@@ -219,7 +219,7 @@ export class PipelineManager {
       }).catch(function (e) {
         self._log.error('pipeline', 'Continue conversation failed: ' + e);
         self._card.chat.clear();
-        self._card.ui.hideBlurOverlay();
+        self._card.ui.hideBlurOverlay('pipeline');
         self.restart(0);
       });
     });
@@ -310,7 +310,7 @@ export class PipelineManager {
       tts.playChime('wake');
     }
     this._card.turnOffWakeWordSwitch();
-    this._card.ui.showBlurOverlay();
+    this._card.ui.showBlurOverlay('pipeline');
   }
 
   handleSttEnd(eventData) {
@@ -423,7 +423,7 @@ export class PipelineManager {
 
     if (this._serviceUnavailable) {
       this._log.log('ui', 'Error recovery handling restart');
-      this._card.ui.hideBlurOverlay();
+      this._card.ui.hideBlurOverlay('pipeline');
       return;
     }
 
@@ -452,7 +452,7 @@ export class PipelineManager {
         this._log.log('ui', 'Cleaning up interaction UI after expected error');
         this._card.setState(State.IDLE);
         this._card.chat.clear();
-        this._card.ui.hideBlurOverlay();
+        this._card.ui.hideBlurOverlay('pipeline');
         this._shouldContinue = false;
         this._continueConversationId = null;
         var isRemote = this._card.config.tts_target && this._card.config.tts_target !== 'browser';
@@ -478,7 +478,7 @@ export class PipelineManager {
     this._card.ui.showErrorBar();
     this._serviceUnavailable = true;
     this._card.chat.clear();
-    this._card.ui.hideBlurOverlay();
+    this._card.ui.hideBlurOverlay('pipeline');
 
     this.restart(this._calculateRetryDelay());
   }
@@ -508,7 +508,7 @@ export class PipelineManager {
   _finishRunEnd() {
     this._pendingRunEnd = false;
     this._card.chat.clear();
-    this._card.ui.hideBlurOverlay();
+    this._card.ui.hideBlurOverlay('pipeline');
     this._card.setState(State.IDLE);
 
     if (this._serviceUnavailable) {

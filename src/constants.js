@@ -41,6 +41,19 @@ export const DEFAULT_CONFIG = {
   auto_gain_control: true,
   voice_isolation: false,
 
+  // Timer Pill
+  timer_position: 'bottom-right',
+  timer_font_size: 20,
+  timer_font_family: 'inherit',
+  timer_font_color: '#444444',
+  timer_font_bold: true,
+  timer_font_italic: false,
+  timer_background: '#ffffff',
+  timer_border_color: 'rgba(100, 200, 150, 0.5)',
+  timer_padding: 16,
+  timer_rounded: true,
+  timer_finished_duration: 60,
+
   // Rainbow Bar
   bar_position: 'bottom',
   bar_height: 16,

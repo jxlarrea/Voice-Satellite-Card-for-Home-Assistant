@@ -14,6 +14,7 @@ import { UIManager } from './ui.js';
 import { ChatManager } from './chat.js';
 import { DoubleTapHandler } from './double-tap.js';
 import { VisibilityManager } from './visibility.js';
+import { TimerManager } from './timer.js';
 import { getConfigForm } from './editor.js';
 import { isEditorPreview, renderPreview } from './preview.js';
 
@@ -40,6 +41,7 @@ export class VoiceSatelliteCard extends HTMLElement {
     this._chat = new ChatManager(this);
     this._doubleTap = new DoubleTapHandler(this);
     this._visibility = new VisibilityManager(this);
+    this._timer = new TimerManager(this);
   }
 
   // --- Public accessors for managers ---
@@ -51,6 +53,7 @@ export class VoiceSatelliteCard extends HTMLElement {
   get ui() { return this._ui; }
   get chat() { return this._chat; }
   get config() { return this._config; }
+  get timer() { return this._timer; }
   get currentState() { return this._state; }
   get connection() {
     if (!this._connection && this._hass && this._hass.connection) {
@@ -119,6 +122,11 @@ export class VoiceSatelliteCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+
+    // Only update timer on the active card instance
+    if (!window._voiceSatelliteInstance || window._voiceSatelliteInstance === this) {
+      this._timer.update();
+    }
 
     if (this._hasStarted) return;
     if (!hass || !hass.connection) return;
@@ -217,7 +225,7 @@ export class VoiceSatelliteCard extends HTMLElement {
     }
 
     this._chat.clear();
-    this._ui.hideBlurOverlay();
+    this._ui.hideBlurOverlay('pipeline');
     this._ui.updateForState(this._state, this._pipeline.serviceUnavailable, false);
     this.updateInteractionState('IDLE');
   }
