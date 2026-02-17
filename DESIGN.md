@@ -1147,7 +1147,12 @@ For integration implementation details, see the [Voice Satellite Card Integratio
 
 ### 22.3 Client Side (TimerManager)
 
-`TimerManager` (`src/timer.js`) polls the satellite entity's `timers` attribute on every `set hass()` call.
+`TimerManager` (`src/timer.js`) subscribes to `state_changed` events via `connection.subscribeEvents()` filtered to the `satellite_entity`. This gives real-time updates (unlike polling in `set hass()`). On first `update()` call, it subscribes once and does an immediate check of current entity state. The subscription is cleaned up in `destroy()`.
+
+**State change processing:**
+- `_processStateChange(attrs)` called on every `state_changed` event
+- `_lastRawJson` JSON string comparison prevents re-processing unchanged timer data
+- Detects finished timers by diffing `_knownTimerIds` against new IDs and checking `last_timer_event === 'finished'`
 
 **Timer pill rendering:**
 - Each timer gets a positioned pill element with countdown text
@@ -1225,7 +1230,7 @@ For integration implementation details, see the [Voice Satellite Card Integratio
 
 ### 23.3 Client Side (AnnouncementManager)
 
-`AnnouncementManager` (`src/announcement.js`) polls the satellite entity's `announcement` attribute.
+`AnnouncementManager` (`src/announcement.js`) polls the satellite entity's `announcement` attribute via `hass.states` on every `set hass()` call (unlike TimerManager which uses event subscriptions).
 
 **Deduplication:** Tracks `_lastAnnounceId` (incrementing integer). Only processes announcements with `id > _lastAnnounceId`.
 
@@ -1322,7 +1327,7 @@ When recreating or modifying this card, verify:
 - [ ] `card.onTTSComplete(playbackFailed)` skips continue-conversation when `playbackFailed` is true
 
 **Timers (requires integration):**
-- [ ] `TimerManager` polls `satellite_entity` attributes in `set hass()` for timer state changes
+- [ ] `TimerManager` subscribes to `state_changed` events for `satellite_entity` (not polling in `set hass()`)
 - [ ] Timer pills rendered outside Shadow DOM (global overlay) for cross-view persistence
 - [ ] `_knownTimerIds` set prevents re-alerting finished timers
 - [ ] Timer countdown uses `seconds_left` minus elapsed time since `updated_at`
