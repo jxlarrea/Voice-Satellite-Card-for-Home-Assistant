@@ -43,7 +43,10 @@ export function getConfigForm() {
         name: 'satellite_entity',
         selector: {
           entity: {
-            filter: { domain: 'assist_satellite' },
+            filter: {
+              domain: 'assist_satellite',
+              integration: 'voice_satellite',
+            },
           },
         },
       },
@@ -178,7 +181,7 @@ export function getConfigForm() {
       {
         type: 'expandable',
         name: '',
-        title: 'Timer Pill',
+        title: 'Timer Pill (requires integration)',
         flatten: true,
         schema: [
           {
@@ -269,7 +272,7 @@ export function getConfigForm() {
       {
         type: 'expandable',
         name: '',
-        title: 'Announcements',
+        title: 'Announcements (requires integration)',
         flatten: true,
         schema: [
           {
@@ -559,7 +562,7 @@ export function getConfigForm() {
       var helpers = {
         wake_word_switch: 'Turn OFF this switch when wake word is detected (e.g., Fully Kiosk screensaver)',
         state_entity: 'Updates with ACTIVE/IDLE for per-device automations',
-        satellite_entity: 'Voice Satellite Card Integration entity for timer support',
+        satellite_entity: 'Requires Voice Satellite Card Integration. Enables timers and announcements.',
         timer_font_family: 'CSS font-family value (e.g., inherit, Arial, monospace)',
         timer_border_color: 'CSS color value (supports rgba)',
         timer_finished_duration: 'Seconds to show finished timer alert (0 = until dismissed)',

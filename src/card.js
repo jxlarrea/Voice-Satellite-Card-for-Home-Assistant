@@ -174,6 +174,23 @@ export class VoiceSatelliteCard extends HTMLElement {
     if (newState === State.WAKE_WORD_DETECTED) {
       this.updateInteractionState('ACTIVE');
     }
+
+    // Sync pipeline state to integration entity
+    this._syncSatelliteState(newState);
+  }
+
+  _syncSatelliteState(state) {
+    var entityId = this._config.satellite_entity;
+    if (!entityId || !this._hass || !this._hass.connection) return;
+
+    var self = this;
+    this._hass.connection.sendMessagePromise({
+      type: 'voice_satellite/update_state',
+      entity_id: entityId,
+      state: state,
+    }).catch(function (e) {
+      self._logger.error('satellite_state', 'Failed to sync state: ' + e);
+    });
   }
 
   updateInteractionState(interactionState) {

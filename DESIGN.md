@@ -46,6 +46,8 @@ voice-satellite-card/
 │   ├── pipeline.js                   ← PipelineManager (start/stop/restart, events, recovery)
 │   ├── ui.js                         ← UIManager (overlay, bar, blur, start button)
 │   ├── chat.js                       ← ChatManager (bubbles, streaming fade)
+│   ├── timer.js                      ← TimerManager (countdown pills, alerts, voice/tap cancel)
+│   ├── announcement.js               ← AnnouncementManager (TTS announcements with chime, queue)
 │   ├── styles.css                    ← CSS styles (imported as raw string via webpack)
 │   ├── double-tap.js                 ← DoubleTapHandler (cancel with touch dedup)
 │   ├── visibility.js                 ← VisibilityManager (tab pause/resume)
@@ -53,14 +55,18 @@ voice-satellite-card/
 │   └── editor.js                     ← getConfigForm() schema (native HA selectors)
 ├── .github/
 │   ├── workflows/
-│   │   └── release.yml               ← Build + upload release assets on GitHub release
-│   └── FUNDING.yml                   ← Sponsor links (Buy Me a Coffee, GitHub Sponsors)
+│   │   ├── release.yml               ← Build + upload release assets on GitHub release
+│   │   └── validate.yml              ← HACS validation (push, PR, daily cron)
+│   └── funding.yml                   ← Sponsor links (Buy Me a Coffee, GitHub Sponsors)
 ├── voice-satellite-card.min.js       ← Built output (minified, committed for HACS)
 ├── voice-satellite-card.js           ← Built output (readable, gitignored)
 ├── voice-satellite-card.js.map       ← Source map (gitignored)
 ├── package.json                      ← npm scripts: build, dev
+├── package-lock.json                 ← npm lockfile (committed)
 ├── webpack.config.js                 ← Dual output (readable + minified)
 ├── babel.config.js                   ← ES6+ target (modern browsers)
+├── hacs.json                         ← HACS metadata (name, filename, HA version)
+├── LICENSE                           ← MIT License
 ├── .gitignore                        ← Ignores node_modules/, .js, .js.map (not .min.js)
 ├── README.md                         ← User-facing docs, badges, installation, configuration
 ├── DESIGN.md                         ← This file — architecture, implementation details
@@ -87,7 +93,9 @@ Only `voice-satellite-card.min.js` is committed to git. The readable version and
 **GitHub infrastructure:**
 
 - **Release workflow** (`.github/workflows/release.yml`): Triggers on GitHub release creation or manual `workflow_dispatch`. Checks out code, installs Node 20, runs `npm ci && npm run build`, then uploads `voice-satellite-card.min.js` as a release asset via `softprops/action-gh-release@v2`. This enables download tracking via the GitHub API and shields.io badges.
-- **Funding** (`.github/FUNDING.yml`): Configures the "Sponsor" button with `buy_me_a_coffee: jxlarrea` and `github: jxlarrea`.
+- **Funding** (`.github/funding.yml`): Configures the "Sponsor" button with `buy_me_a_coffee: jxlarrea` and `github: jxlarrea`.
+- **HACS validation** (`.github/workflows/validate.yml`): Runs `hacs/action@main` with `category: plugin` on push, PR, daily cron, and manual dispatch. Only runs when `github.repository_owner == 'jxlarrea'`.
+- **HACS metadata** (`hacs.json`): `{ "name": "Voice Satellite Card", "render_readme": true, "filename": "voice-satellite-card.min.js", "homeassistant": "2025.1.2" }`.
 - **HACS compliance**: `voice-satellite-card.min.js` must remain committed to the default branch. HACS validates repository structure against `refs/heads/main` even when release assets are configured. The `.gitignore` only ignores the readable `.js` and `.js.map`, not `.min.js`.
 - **README badges**: shields.io badges for HACS, version, downloads (from GitHub release assets), build status (from release workflow), and Buy Me a Coffee.
 
@@ -111,6 +119,8 @@ The main `VoiceSatelliteCard` class is a thin orchestrator. All functionality is
 | `PipelineManager` | `card.pipeline` | Pipeline lifecycle, event handling, idle timeout, error recovery |
 | `UIManager` | `card.ui` | Global overlay, activity bar, blur, start button |
 | `ChatManager` | `card.chat` | Chat bubbles, streaming fade, legacy wrappers |
+| `TimerManager` | `card.timer` | Timer countdown pills, alert chimes, voice/tap cancel |
+| `AnnouncementManager` | `card.announcement` | TTS announcements with pre-chime, queue, ACK |
 | `DoubleTapHandler` | `card.doubleTap` | Double-tap cancel with touch/click dedup |
 | `VisibilityManager` | `card.visibility` | Tab visibility pause/resume |
 
@@ -1015,7 +1025,177 @@ Since the card is normally invisible (`getCardSize() = 0`), the editor preview p
 
 ---
 
-## 21. Implementation Checklist
+## 21. Companion Integration
+
+The card works standalone for core voice functionality. Advanced features (timers, announcements) require the **Voice Satellite Card Integration**, a separate custom component (`custom_components/voice_satellite/`) that registers an `assist_satellite` entity in Home Assistant.
+
+### 21.1 Integration Architecture
+
+The integration creates a virtual `AssistSatelliteEntity` that acts as a bridge between HA's satellite platform and the browser card. Communication flows through HA entity state attributes (card polls via `set hass()`) and custom WebSocket commands (card sends ACKs back to integration).
+
+**Entity storage:** Each config entry stores its entity in `hass.data[DOMAIN][entry_id]` for WebSocket command handlers to look up.
+
+**Key files:**
+- `assist_satellite.py` — `VoiceSatelliteAssistEntity` with timer and announcement support
+- `__init__.py` — Integration setup, WebSocket command registration, entity storage
+
+### 21.2 Satellite Entity Config
+
+The card's `satellite_entity` config option points to the `assist_satellite.*` entity created by the integration. When set, the card enables `TimerManager` and `AnnouncementManager`. Both managers poll entity attributes in `set hass()` for state changes.
+
+---
+
+## 22. Timers
+
+### 22.1 Overview
+
+Timers are managed server-side by the integration's `AssistSatelliteEntity` (which implements HA's `AssistSatelliteEntityFeature.TIMER`) and displayed client-side by `TimerManager`. The integration stores active timers in entity attributes; the card renders countdown pills and handles alerts.
+
+### 22.2 Server Side (Integration)
+
+The `AssistSatelliteEntity` implements the timer handler methods required by HA's satellite platform:
+
+- `async_start_timer(timerInfo)` — Stores timer in `_active_timers` dict, keyed by `timer_id`
+- `async_cancel_timer(timer_id)` — Removes from `_active_timers`
+- `async_timer_finished(timer_id)` — Moves timer to `_finished_timers` for a brief period, then removes
+
+Timer data is exposed via entity attributes:
+
+```python
+@property
+def extra_state_attributes(self):
+    return {
+        "timers": {
+            tid: {
+                "id": tid,
+                "name": t.name or "",
+                "total_seconds": t.total_seconds,
+                "seconds_left": t.seconds_left,
+                "is_active": t.is_active,
+                "created_at": t.created_at.isoformat(),
+                "updated_at": t.updated_at.isoformat(),
+            }
+            for tid, t in {**self._active_timers, **self._finished_timers}.items()
+        },
+        # ... other attributes
+    }
+```
+
+### 22.3 Client Side (TimerManager)
+
+`TimerManager` (`src/timer.js`) polls the satellite entity's `timers` attribute on every `set hass()` call.
+
+**Timer pill rendering:**
+- Each timer gets a positioned pill element with countdown text
+- Position configurable: `top-left`, `top-right`, `bottom-left`, `bottom-right`
+- Styled via card config (font, colors, border, padding, rounded)
+- Multiple timers stack vertically
+
+**Countdown update:**
+- `_knownTimerIds` tracks active timers to detect new/removed/finished timers
+- `setInterval` updates displayed time every second using `seconds_left` minus elapsed time since last state update
+- Format: `MM:SS` or `HH:MM:SS` for timers over an hour
+
+**Timer alert (finished):**
+- When `seconds_left <= 0`, pill enters alert mode (flashing animation via CSS)
+- Alert chime plays (three ascending tones via Web Audio API: E5 → G5 → B5)
+- Blur overlay shown (reason: `'timer'`)
+- Auto-dismiss after `timer_finished_duration` seconds (default 60, 0 = manual dismiss only)
+
+**Timer cancel:**
+- **Double-tap pill:** Removes pill immediately, sends cancel via `conversation.process` service
+- **Voice:** "Cancel the timer" handled by conversation agent, integration removes timer, card detects removal in next state update
+- Uses HA's built-in conversation agent (not LLM) for `conversation.process` calls to ensure reliable sentence matching
+
+**Deduplication:**
+- `_knownTimerIds` set prevents re-alerting on timers that were already detected as finished
+- Timer removal is optimistic (visual removal before server confirmation)
+
+### 22.4 Blur Overlay Reference Counting
+
+Timer alerts, announcements, and voice pipeline interactions all use the blur overlay. To prevent one feature from hiding the overlay while another still needs it, `UIManager` implements reference counting:
+
+```javascript
+showBlurOverlay(reason) {
+    this._blurReasons[reason] = true;
+    overlay.classList.add('visible');
+}
+
+hideBlurOverlay(reason) {
+    delete this._blurReasons[reason];
+    if (Object.keys(this._blurReasons).length === 0) {
+        overlay.classList.remove('visible');
+    }
+}
+```
+
+Reason strings: `'pipeline'` (voice interactions), `'timer'` (timer alert), `'announcement'` (announcements).
+
+---
+
+## 23. Announcements
+
+### 23.1 Overview
+
+Announcements enable the `assist_satellite.announce` service, allowing HA automations to send TTS messages to specific browser satellites. The integration blocks the service call until the card ACKs playback completion.
+
+### 23.2 Server Side (Integration)
+
+`async_announce(announcement)` in `AssistSatelliteEntity`:
+
+1. Increments `_announce_id` counter
+2. Stores announcement data in `_pending_announcement` (exposed via entity attributes)
+3. Creates `asyncio.Event` and waits on it (with 120s timeout)
+4. When card sends ACK via WebSocket → `announce_finished()` sets the event
+5. Finally block clears `_pending_announcement` and writes state
+
+**WebSocket ACK command:**
+```python
+@websocket_api.websocket_command({
+    vol.Required("type"): "voice_satellite/announce_finished",
+    vol.Required("entity_id"): str,
+    vol.Required("announce_id"): int,
+})
+```
+
+**Announcement attributes exposed:**
+```python
+"announcement": {
+    "id": announce_id,
+    "message": announcement.message,
+    "media_id": announcement.media_id,  # Full playable URL
+    "preannounce_media_id": announcement.preannounce_media_id,
+}
+```
+
+Key detail: `media_id` contains the resolved TTS URL (e.g., `/api/tts_proxy/xxx.mp3`), not the media source reference. `media_id_source` (which contains just `"tts"`) is not passed to the card.
+
+### 23.3 Client Side (AnnouncementManager)
+
+`AnnouncementManager` (`src/announcement.js`) polls the satellite entity's `announcement` attribute.
+
+**Deduplication:** Tracks `_lastAnnounceId` (incrementing integer). Only processes announcements with `id > _lastAnnounceId`.
+
+**Pipeline queue:** If a voice interaction is in progress (`WAKE_WORD_DETECTED`, `STT`, `INTENT`, `TTS`, or `tts.isPlaying`), the announcement is stored in `_queued`. When `card.onTTSComplete()` fires and the pipeline returns to idle, it calls `announcement.playQueued()`.
+
+**Playback sequence:**
+1. Show blur overlay (reason: `'announcement'`)
+2. Save current activity bar state, show bar in `speaking` mode
+3. Play pre-announcement:
+   - If `preannounce_media_id` provided: play custom media via `<audio>` element
+   - Otherwise: play default ding-dong chime (G5 784Hz → D5 587Hz via Web Audio API)
+4. Play main TTS media via `<audio>` element using `media_id` URL
+5. Show message as chat bubble (styled like assistant response, with `.announcement` class)
+6. On complete: send ACK via WebSocket (`voice_satellite/announce_finished`)
+7. Auto-clear after `announcement_display_duration` seconds (default 5)
+
+**Bar state restore:** On completion, the activity bar is restored to its pre-announcement state rather than blindly hidden, preventing conflicts with concurrent pipeline activity.
+
+**Overlap guard:** If an announcement is already playing (`_playing` flag), new announcements are ignored.
+
+---
+
+## 24. Implementation Checklist
 
 When recreating or modifying this card, verify:
 
@@ -1086,3 +1266,33 @@ When recreating or modifying this card, verify:
 - [ ] `tts._onComplete(true)` called with `playbackFailed` flag when `play()` promise rejects
 - [ ] `card.onTTSComplete(playbackFailed)` barge-in guard excludes `State.TTS` (only checks WAKE_WORD_DETECTED, STT, INTENT)
 - [ ] `card.onTTSComplete(playbackFailed)` skips continue-conversation when `playbackFailed` is true
+
+**Timers (requires integration):**
+- [ ] `TimerManager` polls `satellite_entity` attributes in `set hass()` for timer state changes
+- [ ] Timer pills rendered outside Shadow DOM (global overlay) for cross-view persistence
+- [ ] `_knownTimerIds` set prevents re-alerting finished timers
+- [ ] Timer countdown uses `seconds_left` minus elapsed time since `updated_at`
+- [ ] Timer alert plays three-tone chime (E5 → G5 → B5) via Web Audio API
+- [ ] Timer alert shows blur overlay with reason `'timer'`
+- [ ] Double-tap on timer pill cancels via `conversation.process` with built-in agent
+- [ ] Timer cancel is optimistic (visual removal before server confirmation)
+- [ ] `timer_finished_duration: 0` means alert stays until manually dismissed
+- [ ] Timer manager ignores timers when `satellite_entity` is not configured
+
+**Announcements (requires integration):**
+- [ ] `AnnouncementManager` polls `satellite_entity` attributes for `announcement` in `set hass()`
+- [ ] Announcement `media_id` is the resolved playable URL (not `media_id_source`)
+- [ ] Pre-announcement chime: default ding-dong (G5 → D5) or custom media from `preannounce_media_id`
+- [ ] Announcements queue behind active pipeline (`_queued`), played via `playQueued()` on idle
+- [ ] `playQueued()` called from `card.onTTSComplete()` after normal completion
+- [ ] ACK sent via `voice_satellite/announce_finished` WebSocket command on playback complete
+- [ ] Integration blocks `async_announce` until ACK received or 120s timeout
+- [ ] Activity bar state saved/restored around announcements (not blindly hidden)
+- [ ] Blur overlay uses reason `'announcement'` (reference counted)
+- [ ] `_lastAnnounceId` prevents replaying same announcement on rapid `set hass()` calls
+- [ ] Overlap guard: `_playing` flag prevents concurrent announcement playback
+
+**Blur overlay reference counting:**
+- [ ] `UIManager.showBlurOverlay(reason)` / `hideBlurOverlay(reason)` with reason-keyed tracking
+- [ ] Blur only hidden when all reasons cleared (`Object.keys(_blurReasons).length === 0`)
+- [ ] Pipeline uses reason `'pipeline'`, timer uses `'timer'`, announcement uses `'announcement'`
