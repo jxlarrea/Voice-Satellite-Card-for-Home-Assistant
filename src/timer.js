@@ -20,7 +20,6 @@ export class TimerManager {
 
     this._timers = [];
     this._tickInterval = null;
-    this._lastRawJson = '';
     this._container = null;
     this._unsubscribe = null;
     this._subscribed = false;
@@ -61,7 +60,7 @@ export class TimerManager {
     this._clearAlert();
     this._timers = [];
     this._knownTimerIds = [];
-    this._lastRawJson = '';
+    window._vsLastTimerJson = '';
     if (this._unsubscribe) {
       this._unsubscribe();
       this._unsubscribe = null;
@@ -109,9 +108,11 @@ export class TimerManager {
     }
 
     var rawJson = JSON.stringify(rawTimers);
-    if (rawJson === this._lastRawJson) return;
+    window._vsLastTimerJson = window._vsLastTimerJson || '';
+    if (rawJson === window._vsLastTimerJson) return;
 
     this._log.log('timer', 'State changed: timers=' + rawJson + ' last_event=' + lastEvent);
+    window._vsLastTimerJson = rawJson;
 
     // Detect which timers were removed
     var newIds = [];
@@ -139,7 +140,7 @@ export class TimerManager {
       this._removePill(removedIds[i]);
     }
 
-    this._lastRawJson = rawJson;
+    window._vsLastTimerJson = rawJson;
     this._knownTimerIds = newIds;
 
     // Sync remaining/new timers
@@ -454,7 +455,7 @@ export class TimerManager {
     }
 
     // Update raw JSON cache to match
-    this._lastRawJson = '';
+    window._vsLastTimerJson = '';
 
     if (this._timers.length === 0) {
       this._stopTick();

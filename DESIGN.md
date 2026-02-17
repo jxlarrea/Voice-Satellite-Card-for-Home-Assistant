@@ -773,6 +773,23 @@ Three global flags prevent this:
 
 `disconnectedCallback` uses a 100ms delay before cleanup to distinguish view switches (card destroyed and re-created within milliseconds) from real disconnects.
 
+### 13.1 Dual-Instance Deduplication - Critical
+
+The singleton pattern above controls which instance owns the microphone and pipeline. However, Lovelace may still create two card elements that both register `state_changed` event subscriptions (via `TimerManager` and `AnnouncementManager`). This happens because `set hass()` is called on all card instances, and each instance's `update()` method sets up its own subscription before the singleton `_start()` guard takes effect.
+
+The result: a single `state_changed` event fires two callbacks (one per instance), causing announcements to play twice and timer alerts to show twice.
+
+**Fix:** Deduplication state is stored on `window` rather than on the instance, guaranteeing that the first callback to claim an event blocks all others regardless of which instance it belongs to.
+
+| Global | Used By | Purpose |
+|--------|---------|---------|
+| `window._vsLastAnnounceId` | `AnnouncementManager._processAnnouncement()` | Monotonic announcement ID; first instance to claim an ID wins |
+| `window._vsLastTimerJson` | `TimerManager._processStateChange()` | JSON string of active timers; identical payloads are skipped |
+
+These globals are reset in the respective `destroy()` and `cancelTimer()` methods.
+
+**Why not just prevent the second subscription?** The `set hass()` guard (`window._voiceSatelliteInstance === this`) prevents the non-active instance from calling `update()`. However, during initial load, `_voiceSatelliteInstance` may not yet be set when the first `set hass()` arrives, allowing both instances through. The window-level globals provide a belt-and-suspenders guarantee.
+
 ---
 
 ## 14. Configuration Reference
@@ -1151,7 +1168,7 @@ For integration implementation details, see the [Voice Satellite Card Integratio
 
 **State change processing:**
 - `_processStateChange(attrs)` called on every `state_changed` event
-- `_lastRawJson` JSON string comparison prevents re-processing unchanged timer data
+- `window._vsLastTimerJson` JSON string comparison prevents re-processing unchanged timer data (see Dual-Instance Deduplication below)
 - Detects finished timers by diffing `_knownTimerIds` against new IDs and checking `last_timer_event === 'finished'`
 
 **Timer pill rendering:**
@@ -1230,9 +1247,9 @@ For integration implementation details, see the [Voice Satellite Card Integratio
 
 ### 23.3 Client Side (AnnouncementManager)
 
-`AnnouncementManager` (`src/announcement.js`) polls the satellite entity's `announcement` attribute via `hass.states` on every `set hass()` call (unlike TimerManager which uses event subscriptions).
+`AnnouncementManager` (`src/announcement.js`) subscribes to `state_changed` events via `connection.subscribeEvents()` filtered to the `satellite_entity`. This gives real-time updates that survive long idle periods and Fully Kiosk screensaver states (unlike polling in `set hass()` which depends on Lovelace delivering updates). On first `update()` call, it subscribes once and does an immediate check of current entity state in the `.then()` callback. The subscription is cleaned up in `destroy()`.
 
-**Deduplication:** Tracks `_lastAnnounceId` (incrementing integer). Only processes announcements with `id > _lastAnnounceId`.
+**Deduplication:** Uses `window._vsLastAnnounceId` (see Dual-Instance Deduplication below). Only processes announcements with `id > window._vsLastAnnounceId`.
 
 **Pipeline queue:** If a voice interaction is in progress (`WAKE_WORD_DETECTED`, `STT`, `INTENT`, `TTS`, or `tts.isPlaying`), the announcement is stored in `_queued`. When `card.onTTSComplete()` fires and the pipeline returns to idle, it calls `announcement.playQueued()`.
 
@@ -1338,9 +1355,11 @@ When recreating or modifying this card, verify:
 - [ ] Timer cancel is optimistic (visual removal before server confirmation)
 - [ ] `timer_finished_duration: 0` means alert stays until manually dismissed
 - [ ] Timer manager ignores timers when `satellite_entity` is not configured
+- [ ] `window._vsLastTimerJson` used for dedup (not instance-level) to prevent dual-instance double-fire
 
 **Announcements (requires integration):**
-- [ ] `AnnouncementManager` polls `satellite_entity` attributes for `announcement` in `set hass()`
+- [ ] `AnnouncementManager` subscribes to `state_changed` events for `satellite_entity` (not polling in `set hass()`)
+- [ ] Subscription survives long idle/screensaver periods (unlike `set hass()` which depends on Lovelace)
 - [ ] Announcement `media_id` is the resolved playable URL (not `media_id_source`)
 - [ ] Pre-announcement chime: default ding-dong (G5 → D5) or custom media from `preannounce_media_id`
 - [ ] Announcements queue behind active pipeline (`_queued`), played via `playQueued()` on idle
@@ -1350,7 +1369,7 @@ When recreating or modifying this card, verify:
 - [ ] Activity bar state saved/restored around announcements (not blindly hidden)
 - [ ] Blur overlay uses reason `'announcement'` (reference counted)
 - [ ] Wake word switch turned off on announcement (wakes screen from screensaver)
-- [ ] `_lastAnnounceId` prevents replaying same announcement on rapid `set hass()` calls
+- [ ] `window._vsLastAnnounceId` used for dedup (not instance-level) to prevent dual-instance double-fire
 - [ ] Overlap guard: `_playing` flag prevents concurrent announcement playback
 
 **Satellite state synchronization:**

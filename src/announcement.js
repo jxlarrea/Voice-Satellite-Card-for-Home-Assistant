@@ -16,31 +16,88 @@ export class AnnouncementManager {
     this._card = card;
     this._log = card.logger;
 
-    this._lastAnnounceId = 0;
     this._playing = false;
     this._currentAudio = null;
     this._clearTimeout = null;
     this._barWasVisible = false;
     this._queued = null;
+    this._unsubscribe = null;
+    this._subscribed = false;
   }
 
   /**
-   * Called from set hass() — checks entity state for new announcements.
+   * Called from set hass() - ensures subscription is active.
+   * Announcement detection is handled exclusively by the state_changed
+   * subscription to avoid duplicate triggers.
    */
   update() {
-    var hass = this._card.hass;
     var config = this._card.config;
-    if (!hass || !config.satellite_entity) return;
+    if (!config.satellite_entity) return;
 
-    var state = hass.states[config.satellite_entity];
-    if (!state || !state.attributes || !state.attributes.announcement) return;
+    // Only the active singleton instance should subscribe
+    if (window._voiceSatelliteInstance && window._voiceSatelliteInstance !== this._card) return;
 
-    var ann = state.attributes.announcement;
-    if (!ann.id || ann.id <= this._lastAnnounceId) return;
+    // Set up persistent subscription (once)
+    if (!this._subscribed) {
+      var connection = this._card.connection;
+      if (connection) {
+        this._subscribe(connection, config.satellite_entity);
+      }
+    }
+  }
+
+  destroy() {
+    if (this._unsubscribe) {
+      this._unsubscribe();
+      this._unsubscribe = null;
+    }
+    this._subscribed = false;
+  }
+
+  // --- Subscription (survives idle/screensaver periods) ---
+
+  _subscribe(connection, entityId) {
+    this._subscribed = true;
+    var self = this;
+
+    connection.subscribeEvents(function (event) {
+      var data = event.data;
+      if (!data || !data.new_state) return;
+      if (data.entity_id !== entityId) return;
+
+      var attrs = data.new_state.attributes || {};
+      self._processAnnouncement(attrs);
+    }, 'state_changed').then(function (unsub) {
+      self._unsubscribe = unsub;
+      self._log.log('announce', 'Subscribed to state changes for ' + entityId);
+
+      // Immediate check for any pending announcement at subscription time
+      var hass = self._card.hass;
+      if (hass && hass.states && hass.states[entityId]) {
+        var attrs = hass.states[entityId].attributes || {};
+        self._processAnnouncement(attrs);
+      }
+    }).catch(function (err) {
+      self._log.error('announce', 'Failed to subscribe: ' + err);
+      self._subscribed = false;
+    });
+  }
+
+  _processAnnouncement(attrs) {
+    if (!attrs.announcement) return;
+
+    var ann = attrs.announcement;
+    if (!ann.id) return;
+
+    // Window-level dedup — guarantees single processing regardless
+    // of how many card/manager instances exist
+    window._vsLastAnnounceId = window._vsLastAnnounceId || 0;
+    if (ann.id <= window._vsLastAnnounceId) return;
+    window._vsLastAnnounceId = ann.id;
 
     // New announcement detected
     if (this._playing) {
-      this._log.log('announce', 'Announcement #' + ann.id + ' ignored — already playing');
+      this._log.log('announce', 'Announcement #' + ann.id + ' ignored - already playing');
       return;
     }
 
@@ -51,12 +108,11 @@ export class AnnouncementManager {
     if (pipelineBusy || this._card.tts.isPlaying) {
       if (!this._queued || this._queued.id !== ann.id) {
         this._queued = ann;
-        this._log.log('announce', 'Announcement #' + ann.id + ' queued — pipeline busy (' + cardState + ')');
+        this._log.log('announce', 'Announcement #' + ann.id + ' queued - pipeline busy (' + cardState + ')');
       }
       return;
     }
 
-    this._lastAnnounceId = ann.id;
     this._queued = null;
     this._log.log('announce', 'New announcement #' + ann.id +
       ': message="' + (ann.message || '') +
@@ -73,10 +129,10 @@ export class AnnouncementManager {
     var ann = this._queued;
     this._queued = null;
 
-    if (ann.id <= this._lastAnnounceId) return;
+    if (ann.id <= (window._vsLastAnnounceId || 0)) return;
     if (this._playing) return;
 
-    this._lastAnnounceId = ann.id;
+    window._vsLastAnnounceId = ann.id;
     this._log.log('announce', 'Playing queued announcement #' + ann.id);
     this._playAnnouncement(ann);
   }
