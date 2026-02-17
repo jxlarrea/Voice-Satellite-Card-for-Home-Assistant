@@ -63,16 +63,20 @@ export class PipelineManager {
     if (!connection) return null;
 
     try {
+      this._log.log('pipeline', 'Looking up entity registry for: ' + config.satellite_entity);
       var entity = await connection.sendMessagePromise({
         type: 'config/entity_registry/get',
         entity_id: config.satellite_entity,
       });
+      this._log.log('pipeline', 'Entity registry response received');
       if (entity && entity.device_id) {
         this._log.log('pipeline', 'Resolved device_id: ' + entity.device_id + ' from ' + config.satellite_entity);
         return entity.device_id;
       }
+      this._log.log('pipeline', 'Entity found but no device_id: ' + JSON.stringify(entity));
     } catch (e) {
-      this._log.error('pipeline', 'Failed to resolve device_id from ' + config.satellite_entity + ': ' + e);
+      var msg = (e && e.message) ? e.message : JSON.stringify(e);
+      this._log.error('pipeline', 'Failed to resolve device_id from ' + config.satellite_entity + ': ' + msg);
     }
     return null;
   }
@@ -148,9 +152,12 @@ export class PipelineManager {
     }
 
     // Resolve device_id from satellite entity for timer support
+    this._log.log('pipeline', 'Resolving device_id...');
     var deviceId = await this._resolveDeviceId();
     if (deviceId) {
       runConfig.device_id = deviceId;
+    } else {
+      this._log.log('pipeline', 'No device_id resolved (satellite_entity not configured or lookup failed)');
     }
 
     if (runConfig.input.timeout === undefined) {
@@ -159,6 +166,7 @@ export class PipelineManager {
 
     this._log.log('pipeline', 'Run config: ' + JSON.stringify(runConfig));
 
+    this._log.log('pipeline', 'Subscribing to pipeline...');
     this._unsubscribe = await connection.subscribeMessage(
       function (message) {
         self._card.onPipelineMessage(message);
