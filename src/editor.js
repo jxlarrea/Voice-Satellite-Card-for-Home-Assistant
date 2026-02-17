@@ -40,6 +40,14 @@ export function getConfigForm() {
         },
       },
       {
+        name: 'satellite_entity',
+        selector: {
+          entity: {
+            filter: { domain: 'assist_satellite' },
+          },
+        },
+      },
+      {
         name: 'continue_conversation',
         selector: { boolean: {} },
       },
@@ -383,6 +391,7 @@ export function getConfigForm() {
         start_listening_on_load: 'Start listening on load',
         wake_word_switch: 'Wake word switch entity',
         state_entity: 'State tracking entity',
+        satellite_entity: 'Satellite entity',
         continue_conversation: 'Continue conversation mode',
         double_tap_cancel: 'Double-tap to cancel interaction',
         debug: 'Debug logging',
@@ -431,6 +440,7 @@ export function getConfigForm() {
       var helpers = {
         wake_word_switch: 'Turn OFF this switch when wake word is detected (e.g., Fully Kiosk screensaver)',
         state_entity: 'Updates with ACTIVE/IDLE for per-device automations',
+        satellite_entity: 'Voice Satellite Card Integration entity for timer support',
         tts_target: 'Leave empty for browser audio, or select a media player entity',
         pipeline_timeout: 'Max seconds to wait for pipeline response (0 = no timeout)',
         pipeline_idle_timeout: 'Seconds before pipeline restarts to keep connection fresh',
