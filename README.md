@@ -61,8 +61,8 @@ graph TD
 - **Visual Feedback** - Customizable gradient activity bar shows listening/processing/speaking states.
 - **Transcription Display** - Shows what was understood in a styled bubble.
 - **Continue Conversation** - When the assistant asks a follow-up question, the card automatically listens for a response without requiring the wake word again. Conversation history is displayed in a chat-style interface.
-- **Timers** ⭐ - Voice-activated timers with on-screen countdown pills, alert chimes, and cancel via double-tap or voice. Requires the companion integration.
-- **Announcements** ⭐ - Receive `assist_satellite.announce` service calls with pre-announcement chimes and TTS playback. Queues behind active conversations. Requires the companion integration.
+- **Timers** - Voice-activated timers with on-screen countdown pills, alert chimes, and cancel via double-tap or voice. Requires the [companion integration](https://github.com/jxlarrea/voice-satellite-card-integration).
+- **Announcements** - Receive `assist_satellite.announce` service calls with pre-announcement chimes and TTS playback. Queues behind active conversations. Requires the [companion integration](https://github.com/jxlarrea/voice-satellite-card-integration).
 - **Screensaver Control** - Optionally turn off Fully Kiosk screensaver when wake word is detected.
 - **Configurable Chimes** - Audio feedback for wake word detection and request completion.
 - **State Tracking** - Expose the card's interaction state (`ACTIVE`/`IDLE`) to a Home Assistant entity for per-device automations.
@@ -74,6 +74,8 @@ Before using this card, ensure you have Home Assistant with the [Assist Pipeline
    - Speech-to-Text ([Whisper](https://www.home-assistant.io/integrations/whisper/), OpenAI, etc.)
    - Conversation agent ([Home Assistant](https://www.home-assistant.io/integrations/conversation/), OpenAI, Qwen, etc.)
    - Text-to-Speech ([Piper](https://www.home-assistant.io/integrations/piper/), Kokoro, etc.)
+
+For Timers and Announcements, the [Voice Satellite Card Integration](https://github.com/jxlarrea/voice-satellite-card-integration) is also required.
 
 ## Installation
 
@@ -298,9 +300,9 @@ actions:
 mode: single
 ```
 
-## Companion Integration (Optional)
+## [Companion Integration](https://github.com/jxlarrea/voice-satellite-card-integration) (Optional)
 
-Some features require the **Voice Satellite Card Integration**, a separate custom component that registers your card as an `assist_satellite` entity in Home Assistant. This enables features that need server-side coordination:
+Some features require the **[Voice Satellite Card Integration](https://github.com/jxlarrea/voice-satellite-card-integration)**, a separate custom component that registers your card as an `assist_satellite` entity in Home Assistant. This enables features that need server-side coordination:
 
 | Feature | Card Only | With Integration |
 |---------|-----------|-----------------|
@@ -310,17 +312,8 @@ Some features require the **Voice Satellite Card Integration**, a separate custo
 | Visual feedback (activity bar, blur) | ✅ | ✅ |
 | Chimes | ✅ | ✅ |
 | State tracking | ✅ | ✅ |
-| Double-tap cancel | ✅ | ✅ |
 | **Timers** | ❌ | ✅ |
 | **Announcements** | ❌ | ✅ |
-
-### Installing the Integration
-
-1. Install via HACS: search for **"Voice Satellite Card Integration"**
-2. Restart Home Assistant
-3. Go to Settings → Devices & Services → Add Integration → **Voice Satellite Card**
-4. Configure a name for your satellite (e.g., "Living Room Tablet")
-5. In the card editor, set **Satellite entity** to the new `assist_satellite.*` entity
 
 ### Timers
 
