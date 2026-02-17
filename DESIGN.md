@@ -4,7 +4,7 @@
 
 Voice Satellite Card is a custom Home Assistant Lovelace card that turns any browser into a voice-activated satellite. It captures microphone audio, sends it to Home Assistant's Assist pipeline over WebSocket, and plays back TTS responses — all without leaving the HA dashboard.
 
-The source is organized as ES6 modules in `src/`, bundled via Webpack + Babel into a single `voice-satellite-card.min.js` for deployment. The card is invisible (returns `getCardSize() = 0`). All visual feedback is rendered via a global overlay appended to `document.body`, outside HA's Shadow DOM, so it persists across dashboard view changes.
+The source is organized as ES6 modules in `src/`, bundled via Webpack + Babel into a single `voice-satellite-card.min.js` for deployment. The card is invisible (returns `getCardSize() = 0`). All visual feedback is rendered via a global overlay appended to `document.body`, outside HA's Shadow DOM, so it persists across dashboard view changes. Current version: 3.0.0.
 
 ---
 
@@ -200,9 +200,39 @@ Debug logging includes timestamp (extracted from `message.timestamp`) and trunca
 
 1. **Barge-in check:** If current state is an active *new* interaction (WAKE_WORD_DETECTED, STT, INTENT — but not TTS itself), a new interaction has started — skip cleanup entirely. TTS is excluded from this guard because the state is still TTS when playback completes normally or fails immediately.
 2. **Continue conversation:** If `playbackFailed` is falsy and `pipeline.shouldContinue` and `pipeline.continueConversationId` are set, keep blur/bar/chat visible, clear `chat.streamEl` (so next turn creates fresh bubble), call `pipeline.restartContinue(conversationId)`. When playback failed (e.g. autoplay blocked), the continue-conversation path is skipped to ensure the UI cleans up properly.
-3. **Normal completion:** Play done chime (browser only, not remote TTS), call `chat.clear()`, `ui.hideBlurOverlay()`, `ui.updateForState()`.
+3. **Normal completion:** Play done chime (browser only, not remote TTS), call `chat.clear()`, `ui.hideBlurOverlay()`, `ui.updateForState()`, `updateInteractionState('IDLE')`, `_syncSatelliteState('IDLE')`, then `announcement.playQueued()`.
 
-### 3.7 Response Text Extraction
+### 3.7 Satellite State Synchronization
+
+The card syncs its pipeline state to the integration's `assist_satellite` entity so HA shows the correct status (idle, listening, processing, responding) during interactions. This is managed by `card._syncSatelliteState(state)`.
+
+**Mechanism:** Sends a `voice_satellite/update_state` WebSocket command via `sendMessagePromise` (fire-and-forget, errors silently caught). The integration maps card states to HA satellite states via `hass.states.async_set()`.
+
+**State mapping (card → satellite):**
+
+| Card State | Satellite State | Notes |
+|------------|----------------|-------|
+| `IDLE`, `CONNECTING`, `LISTENING`, `PAUSED`, `ERROR` | `idle` | Card's LISTENING means "waiting for wake word" which is satellite idle |
+| `WAKE_WORD_DETECTED`, `STT` | `listening` | Actively capturing voice command |
+| `INTENT` | `processing` | Processing user intent |
+| `TTS` | `responding` | Speaking response |
+
+**Deduplication:** `_lastSyncedSatelliteState` tracks the last sent state. Only fires WebSocket when the state actually changes.
+
+**Barge-in guard:** When TTS is playing and the pipeline restarts for barge-in (setState → LISTENING), the sync is suppressed. The satellite stays `responding` until TTS actually finishes, at which point `onTTSComplete()` explicitly syncs `IDLE`.
+
+**Integration side:** `set_pipeline_state()` on `VoiceSatelliteEntity` uses `hass.states.async_set()` to directly write the state to the state machine. The base `AssistSatelliteEntity` class doesn't expose a public method to set satellite state externally (it's normally managed automatically via `async_accept_pipeline_from_satellite`), so we bypass it. `AssistSatelliteState` is not exported from the `assist_satellite` package's `__all__`, so string values are used directly.
+
+**WebSocket command:**
+```python
+@websocket_api.websocket_command({
+    vol.Required("type"): "voice_satellite/update_state",
+    vol.Required("entity_id"): str,
+    vol.Required("state"): str,
+})
+```
+
+### 3.8 Response Text Extraction
 
 `pipeline._extractResponseText(eventData)` uses a 4-level fallback chain to handle different HA response formats:
 
@@ -213,11 +243,11 @@ Debug logging includes timestamp (extracted from `message.timestamp`) and trunca
 
 Returns `null` if none found.
 
-### 3.8 Deferred Run-End
+### 3.9 Deferred Run-End
 
 When `run-end` arrives while TTS is still playing, the pipeline sets `_pendingRunEnd = true` and defers cleanup. `finishPendingRunEnd()` is available but currently the run-end is naturally resolved when TTS completes and `onTTSComplete()` handles cleanup. The `_finishRunEnd()` method clears `_pendingRunEnd`, calls `chat.clear()`, `ui.hideBlurOverlay()`, sets state to IDLE, and restarts the pipeline.
 
-### 3.9 UI Pending Start Button
+### 3.10 UI Pending Start Button
 
 `UIManager` has a `_pendingStartButtonReason` field. If `showStartButton()` is called before the global UI overlay exists (possible during early `hass` setter), the reason is stored. `_flushPendingStartButton()` is called by `ensureGlobalUI()` to show the button once the overlay is created. The start button is shown by default (with `.visible` class) when the global UI is first created.
 
@@ -1017,31 +1047,73 @@ Categories: `state`, `lifecycle`, `mic`, `pipeline`, `event`, `error`, `recovery
 
 ## 20. Visual Editor
 
-The card uses Home Assistant's built-in form editor via the `getConfigForm()` static method (defined in `src/editor.js`). Instead of a custom HTML editor element, the card returns a schema object that HA renders using native selectors — entity pickers, boolean toggles, number sliders, select dropdowns, and text inputs. The Behavior fields (pipeline, entity pickers, toggles) are always visible at the top level. The remaining settings are organized into expandable sections: Volume & Chimes, Microphone Processing, Timeouts, Activity Bar, Transcription Bubble, and Response Bubble. Entity fields use the native `entity` selector with domain filters (e.g., `input_text` for state_entity, `switch`/`input_boolean` for wake_word_switch, `media_player` for tts_target). The pipeline picker uses the native `assist_pipeline` selector. Labels and helper text are provided via `computeLabel` and `computeHelper` callbacks. No custom element registration is needed — HA handles all rendering, validation, and config-changed events automatically.
+The card uses Home Assistant's built-in form editor via the `getConfigForm()` static method (defined in `src/editor.js`). Instead of a custom HTML editor element, the card returns a schema object that HA renders using native selectors — entity pickers, boolean toggles, number sliders, select dropdowns, and text inputs.
+
+**Top-level fields (always visible, in order):**
+1. `pipeline_id` — Assist Pipeline selector (native `assist_pipeline` selector)
+2. `satellite_entity` — entity picker filtered to `assist_satellite` domain + `voice_satellite` integration. Helper text includes link to the companion integration repo.
+3. `state_entity` — entity picker filtered to `input_text` domain
+4. `wake_word_switch` — entity picker filtered to `switch` and `input_boolean` domains
+5. `continue_conversation` — boolean toggle
+6. `debug` — boolean toggle
+
+**Hidden fields (not in editor, enabled by default, configurable via YAML):**
+- `start_listening_on_load` — defaults to `true`, controls auto-start on page load
+- `double_tap_cancel` — defaults to `true`, enables double-tap to cancel interaction
+
+**Expandable sections:** Volume & Chimes, Microphone Processing, Timeouts, Activity Bar, Transcription Bubble, Response Bubble, Timer Pill (requires integration), Announcements (requires integration).
+
+Labels and helper text are provided via `computeLabel` and `computeHelper` callbacks. No custom element registration is needed — HA handles all rendering, validation, and config-changed events automatically.
 
 ### 20.1 Editor Preview
 
-Since the card is normally invisible (`getCardSize() = 0`), the editor preview pane would be blank. To provide visual feedback, the card detects when it is rendered inside HA's editor preview (via `isEditorPreview()` in `src/preview.js`, which walks up the DOM/shadow DOM tree looking for `hui-card-preview` or related wrapper elements). When detected, `renderPreview()` renders a self-contained preview inside the shadow DOM showing the activity bar (with flowing animation), blur overlay, a colorful background, and sample transcription/response bubbles styled with the current config. The preview updates live as the user changes settings — `setConfig()` re-renders the preview on every config change, and `connectedCallback()` defers the check via `requestAnimationFrame` to ensure the card is in its final DOM position.
+Since the card is normally invisible (`getCardSize() = 0`), the editor preview pane would be blank. To provide visual feedback, the card detects when it is rendered inside HA's editor preview (via `isEditorPreview()` in `src/preview.js`, which walks up the DOM/shadow DOM tree looking for `hui-card-preview` or related wrapper elements). When detected, `renderPreview()` renders a self-contained preview inside the shadow DOM showing the activity bar (with flowing animation), blur overlay, a checkered background pattern (gray tones at 40% opacity for clear blur effect testing), and sample transcription/response bubbles styled with the current config. When `satellite_entity` is configured, a timer pill preview is also shown with sample text "⏱ 04:32" positioned according to `timer_position` config. The preview updates live as the user changes settings — `setConfig()` re-renders the preview on every config change, and `connectedCallback()` defers the check via `requestAnimationFrame` to ensure the card is in its final DOM position. Preview container height is 300px, bubble container width is 90% with `line-height: 1.2` to prevent text wrapping/overlap.
 
 ---
 
 ## 21. Companion Integration
 
-The card works standalone for core voice functionality. Advanced features (timers, announcements) require the **Voice Satellite Card Integration**, a separate custom component (`custom_components/voice_satellite/`) that registers an `assist_satellite` entity in Home Assistant.
+The card works standalone for core voice functionality. Advanced features (timers, announcements, satellite state sync) require the **Voice Satellite Card Integration**, a separate custom component (`custom_components/voice_satellite/`) that registers an `assist_satellite` entity in Home Assistant.
 
 ### 21.1 Integration Architecture
 
-The integration creates a virtual `AssistSatelliteEntity` that acts as a bridge between HA's satellite platform and the browser card. Communication flows through HA entity state attributes (card polls via `set hass()`) and custom WebSocket commands (card sends ACKs back to integration).
+The integration creates a virtual `AssistSatelliteEntity` that acts as a bridge between HA's satellite platform and the browser card. Communication flows in two directions:
+- **HA → Card:** Entity state attributes (timers, announcements) polled by card via `set hass()`
+- **Card → HA:** Custom WebSocket commands (`voice_satellite/announce_finished`, `voice_satellite/update_state`)
 
 **Entity storage:** Each config entry stores its entity in `hass.data[DOMAIN][entry_id]` for WebSocket command handlers to look up.
 
 **Key files:**
-- `assist_satellite.py` — `VoiceSatelliteAssistEntity` with timer and announcement support
-- `__init__.py` — Integration setup, WebSocket command registration, entity storage
+- `assist_satellite.py` — `VoiceSatelliteEntity` with timer, announcement, and state sync support
+- `__init__.py` — Integration setup, WebSocket command registration (`ws_announce_finished`, `ws_update_state`)
+- `config_flow.py` — User-facing config flow (satellite name)
+- `const.py` — Domain constant (`voice_satellite`)
+- `manifest.json` — Integration metadata (name: "Voice Satellite Card Integration")
+
+**WebSocket commands registered:**
+
+| Command | Purpose | Payload |
+|---------|---------|---------|
+| `voice_satellite/announce_finished` | Card ACKs announcement playback complete | `entity_id`, `announce_id` |
+| `voice_satellite/update_state` | Card syncs pipeline state to entity | `entity_id`, `state` |
+
+**Device info:**
+- `manufacturer`: "Voice Satellite Card Integration"
+- `model`: "Browser Satellite"
+- `sw_version`: "1.0.0"
 
 ### 21.2 Satellite Entity Config
 
-The card's `satellite_entity` config option points to the `assist_satellite.*` entity created by the integration. When set, the card enables `TimerManager` and `AnnouncementManager`. Both managers poll entity attributes in `set hass()` for state changes.
+The card's `satellite_entity` config option points to the `assist_satellite.*` entity created by the integration. When set, the card enables `TimerManager`, `AnnouncementManager`, and satellite state synchronization. The `satellite_entity` selector in the editor is filtered to `integration: 'voice_satellite'` to only show entities from the companion integration (not Voice PE or other satellites).
+
+### 21.3 Wake Word Switch Integration
+
+The `wake_word_switch` config option (a `switch` or `input_boolean` entity) is turned off on three events:
+1. **Wake word detected** — pipeline.js calls `card.turnOffWakeWordSwitch()`
+2. **Announcement received** — announcement.js calls `card.turnOffWakeWordSwitch()`
+3. **Timer alert fired** — timer.js calls `card.turnOffWakeWordSwitch()`
+
+This is typically used to disable a screensaver (e.g., Fully Kiosk Browser) when the satellite needs the user's attention.
 
 ---
 
@@ -1053,11 +1125,13 @@ Timers are managed server-side by the integration's `AssistSatelliteEntity` (whi
 
 ### 22.2 Server Side (Integration)
 
-The `AssistSatelliteEntity` implements the timer handler methods required by HA's satellite platform:
+The `VoiceSatelliteEntity` registers a timer handler via `intent.async_register_timer_handler()` in `async_added_to_hass()`. Timer events are handled by `_handle_timer_event()`:
 
-- `async_start_timer(timerInfo)` — Stores timer in `_active_timers` dict, keyed by `timer_id`
-- `async_cancel_timer(timer_id)` — Removes from `_active_timers`
-- `async_timer_finished(timer_id)` — Moves timer to `_finished_timers` for a brief period, then removes
+- `TimerEventType.STARTED` — Appends timer dict to `_active_timers` with `id`, `name`, `total_seconds`, `started_at` (Unix timestamp), `start_hours/minutes/seconds`
+- `TimerEventType.UPDATED` — Updates existing timer's duration and `started_at`
+- `TimerEventType.CANCELLED` / `FINISHED` — Removes timer from `_active_timers`
+
+Each event calls `async_write_ha_state()` to push the update to the card immediately.
 
 Timer data is exposed via entity attributes:
 
@@ -1065,19 +1139,9 @@ Timer data is exposed via entity attributes:
 @property
 def extra_state_attributes(self):
     return {
-        "timers": {
-            tid: {
-                "id": tid,
-                "name": t.name or "",
-                "total_seconds": t.total_seconds,
-                "seconds_left": t.seconds_left,
-                "is_active": t.is_active,
-                "created_at": t.created_at.isoformat(),
-                "updated_at": t.updated_at.isoformat(),
-            }
-            for tid, t in {**self._active_timers, **self._finished_timers}.items()
-        },
-        # ... other attributes
+        "active_timers": self._active_timers,  # list of timer dicts
+        "last_timer_event": self._last_timer_event,  # event type string
+        # ... announcement attributes
     }
 ```
 
@@ -1100,6 +1164,7 @@ def extra_state_attributes(self):
 - When `seconds_left <= 0`, pill enters alert mode (flashing animation via CSS)
 - Alert chime plays (three ascending tones via Web Audio API: E5 → G5 → B5)
 - Blur overlay shown (reason: `'timer'`)
+- Wake word switch turned off (wakes screen from screensaver)
 - Auto-dismiss after `timer_finished_duration` seconds (default 60, 0 = manual dismiss only)
 
 **Timer cancel:**
@@ -1180,14 +1245,15 @@ Key detail: `media_id` contains the resolved TTS URL (e.g., `/api/tts_proxy/xxx.
 
 **Playback sequence:**
 1. Show blur overlay (reason: `'announcement'`)
-2. Save current activity bar state, show bar in `speaking` mode
-3. Play pre-announcement:
+2. Wake up screen (turn off wake word switch, e.g. Fully Kiosk screensaver)
+3. Save current activity bar state, show bar in `speaking` mode
+4. Play pre-announcement:
    - If `preannounce_media_id` provided: play custom media via `<audio>` element
    - Otherwise: play default ding-dong chime (G5 784Hz → D5 587Hz via Web Audio API)
-4. Play main TTS media via `<audio>` element using `media_id` URL
-5. Show message as chat bubble (styled like assistant response, with `.announcement` class)
-6. On complete: send ACK via WebSocket (`voice_satellite/announce_finished`)
-7. Auto-clear after `announcement_display_duration` seconds (default 5)
+5. Play main TTS media via `<audio>` element using `media_id` URL
+6. Show message as chat bubble (styled like assistant response, with `.announcement` class)
+7. On complete: send ACK via WebSocket (`voice_satellite/announce_finished`)
+8. Auto-clear after `announcement_display_duration` seconds (default 5)
 
 **Bar state restore:** On completion, the activity bar is restored to its pre-announcement state rather than blindly hidden, preventing conflicts with concurrent pipeline activity.
 
@@ -1274,6 +1340,7 @@ When recreating or modifying this card, verify:
 - [ ] Timer countdown uses `seconds_left` minus elapsed time since `updated_at`
 - [ ] Timer alert plays three-tone chime (E5 → G5 → B5) via Web Audio API
 - [ ] Timer alert shows blur overlay with reason `'timer'`
+- [ ] Timer alert turns off wake word switch (wakes screen from screensaver)
 - [ ] Double-tap on timer pill cancels via `conversation.process` with built-in agent
 - [ ] Timer cancel is optimistic (visual removal before server confirmation)
 - [ ] `timer_finished_duration: 0` means alert stays until manually dismissed
@@ -1289,10 +1356,28 @@ When recreating or modifying this card, verify:
 - [ ] Integration blocks `async_announce` until ACK received or 120s timeout
 - [ ] Activity bar state saved/restored around announcements (not blindly hidden)
 - [ ] Blur overlay uses reason `'announcement'` (reference counted)
+- [ ] Wake word switch turned off on announcement (wakes screen from screensaver)
 - [ ] `_lastAnnounceId` prevents replaying same announcement on rapid `set hass()` calls
 - [ ] Overlap guard: `_playing` flag prevents concurrent announcement playback
+
+**Satellite state synchronization:**
+- [ ] `card._syncSatelliteState(state)` sends `voice_satellite/update_state` WebSocket command
+- [ ] `_lastSyncedSatelliteState` deduplicates (only sends when state actually changes)
+- [ ] Barge-in guard: skips sync to IDLE/LISTENING while `tts.isPlaying` is true
+- [ ] Explicit `_syncSatelliteState('IDLE')` in `onTTSComplete()` after normal completion
+- [ ] Card LISTENING (wake word wait) maps to satellite `idle` (not `listening`)
+- [ ] Integration uses `hass.states.async_set()` to force state (base class doesn't expose setter)
+- [ ] `AssistSatelliteState` is NOT importable from `assist_satellite.__init__` — use string values
 
 **Blur overlay reference counting:**
 - [ ] `UIManager.showBlurOverlay(reason)` / `hideBlurOverlay(reason)` with reason-keyed tracking
 - [ ] Blur only hidden when all reasons cleared (`Object.keys(_blurReasons).length === 0`)
 - [ ] Pipeline uses reason `'pipeline'`, timer uses `'timer'`, announcement uses `'announcement'`
+
+**Editor configuration:**
+- [ ] Field order: pipeline_id → satellite_entity → state_entity → wake_word_switch → continue_conversation → debug
+- [ ] `start_listening_on_load` and `double_tap_cancel` hidden from editor (default `true`, YAML-only)
+- [ ] `satellite_entity` selector filtered to `integration: 'voice_satellite'`
+- [ ] `satellite_entity` helper text includes link to companion integration repo
+- [ ] Timer Pill and Announcements sections titled with "(requires integration)"
+- [ ] Editor preview uses checkered background pattern (not gradient) for blur effect testing
