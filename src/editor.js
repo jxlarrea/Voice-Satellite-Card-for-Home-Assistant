@@ -17,8 +17,23 @@ export function getConfigForm() {
         selector: { assist_pipeline: {} },
       },
       {
-        name: 'start_listening_on_load',
-        selector: { boolean: {} },
+        name: 'satellite_entity',
+        selector: {
+          entity: {
+            filter: {
+              domain: 'assist_satellite',
+              integration: 'voice_satellite',
+            },
+          },
+        },
+      },
+      {
+        name: 'state_entity',
+        selector: {
+          entity: {
+            filter: { domain: 'input_text' },
+          },
+        },
       },
       {
         name: 'wake_word_switch',
@@ -32,30 +47,7 @@ export function getConfigForm() {
         },
       },
       {
-        name: 'state_entity',
-        selector: {
-          entity: {
-            filter: { domain: 'input_text' },
-          },
-        },
-      },
-      {
-        name: 'satellite_entity',
-        selector: {
-          entity: {
-            filter: {
-              domain: 'assist_satellite',
-              integration: 'voice_satellite',
-            },
-          },
-        },
-      },
-      {
         name: 'continue_conversation',
-        selector: { boolean: {} },
-      },
-      {
-        name: 'double_tap_cancel',
         selector: { boolean: {} },
       },
       {
@@ -498,7 +490,6 @@ export function getConfigForm() {
     computeLabel: function (schema) {
       var labels = {
         pipeline_id: 'Assist Pipeline',
-        start_listening_on_load: 'Start listening on load',
         wake_word_switch: 'Wake word switch entity',
         state_entity: 'State tracking entity',
         satellite_entity: 'Satellite entity',
@@ -515,7 +506,6 @@ export function getConfigForm() {
         timer_finished_duration: 'Auto-dismiss timer',
         announcement_display_duration: 'Announcement display duration',
         continue_conversation: 'Continue conversation mode',
-        double_tap_cancel: 'Double-tap to cancel interaction',
         debug: 'Debug logging',
         tts_target: 'TTS output device',
         chime_volume: 'Chime volume',
@@ -562,7 +552,7 @@ export function getConfigForm() {
       var helpers = {
         wake_word_switch: 'Turn OFF this switch when wake word is detected (e.g., Fully Kiosk screensaver)',
         state_entity: 'Updates with ACTIVE/IDLE for per-device automations',
-        satellite_entity: 'Requires Voice Satellite Card Integration. Enables timers and announcements.',
+        satellite_entity: 'Requires Voice Satellite Card Integration. Enables timers and announcements. https://github.com/jxlarrea/voice-satellite-card-integration',
         timer_font_family: 'CSS font-family value (e.g., inherit, Arial, monospace)',
         timer_border_color: 'CSS color value (supports rgba)',
         timer_finished_duration: 'Seconds to show finished timer alert (0 = until dismissed)',

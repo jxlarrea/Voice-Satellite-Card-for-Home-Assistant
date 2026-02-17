@@ -265,6 +265,9 @@ export class TimerManager {
     // Show blur overlay
     this._card.ui.showBlurOverlay('timer');
 
+    // Wake up screen (e.g., turn off Fully Kiosk screensaver)
+    this._card.turnOffWakeWordSwitch();
+
     // Create centered alert element
     this._alertEl = document.createElement('div');
     this._alertEl.className = 'vs-timer-alert';

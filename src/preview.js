@@ -137,10 +137,14 @@ export function renderPreview(shadowRoot, config) {
     '  position: absolute;' +
     '  top: 0; left: 0; right: 0; bottom: 0;' +
     '  background-image:' +
-    '    radial-gradient(circle at 20% 40%, var(--primary-color, #03a9f4) 0%, transparent 50%),' +
-    '    radial-gradient(circle at 75% 30%, var(--accent-color, #ff9800) 0%, transparent 40%),' +
-    '    radial-gradient(circle at 50% 80%, var(--info-color, #4fc3f7) 0%, transparent 45%);' +
-    '  opacity: 0.5;' +
+    '    linear-gradient(45deg, #808080 25%, transparent 25%),' +
+    '    linear-gradient(-45deg, #808080 25%, transparent 25%),' +
+    '    linear-gradient(45deg, transparent 75%, #808080 75%),' +
+    '    linear-gradient(-45deg, transparent 75%, #808080 75%);' +
+    '  background-size: 40px 40px;' +
+    '  background-position: 0 0, 0 20px, 20px -20px, -20px 0px;' +
+    '  background-color: #a0a0a0;' +
+    '  opacity: 0.4;' +
     '}' +
     '.preview-blur {' +
     '  position: absolute;' +

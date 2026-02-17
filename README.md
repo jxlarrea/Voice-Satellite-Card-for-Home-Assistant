@@ -116,18 +116,16 @@ That's it! The card will use your default Assist pipeline and start listening au
 type: custom:voice-satellite-card
 
 # Behavior
-start_listening_on_load: true      # Auto-start on page load
 pipeline_id: ''                    # Pipeline ID (empty = default pipeline)
-wake_word_switch: ''               # Switch to turn OFF when wake word detected
-                                   # e.g., 'switch.tablet_screensaver'
-state_entity: ''                   # input_text entity to track interaction state (ACTIVE/IDLE)
-                                   # e.g., 'input_text.voice_satellite_living_room'
 satellite_entity: ''               # assist_satellite entity from companion integration
                                    # Enables timers and announcements
+state_entity: ''                   # input_text entity to track interaction state (ACTIVE/IDLE)
+                                   # e.g., 'input_text.voice_satellite_living_room'
+wake_word_switch: ''               # Switch to turn OFF when wake word detected
+                                   # e.g., 'switch.tablet_screensaver'
 pipeline_timeout: 60               # Server-side: max seconds for pipeline response (0 = no timeout)
 pipeline_idle_timeout: 300         # Client-side: seconds before pipeline restarts to keep TTS fresh (default 5 min)
 continue_conversation: true        # Continue listening after assistant asks a follow-up question
-double_tap_cancel: true            # Double-tap screen to cancel active interaction and stop TTS
 chime_on_wake_word: true           # Play chime when wake word detected
 chime_on_request_sent: true        # Play chime after request processed
 chime_volume: 100                  # Chime volume (0-100)
@@ -198,9 +196,7 @@ All options are also available in the visual card editor with a live preview tha
 
 ### Starting the Satellite
 
-**Auto-Start**: If `start_listening_on_load` is enabled (default), the card will automatically request microphone access and begin listening.
-
-**Manual Start**: If auto-start fails due to browser restrictions, a floating microphone button will appear. Click it to start.
+The card will automatically request microphone access and begin listening when loaded. If the browser blocks auto-start due to restrictions, a floating microphone button will appear — click it to start.
 
 ### Visual States
 

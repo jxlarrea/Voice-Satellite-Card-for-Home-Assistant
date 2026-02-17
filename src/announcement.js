@@ -88,6 +88,9 @@ export class AnnouncementManager {
     // Show blur overlay
     this._card.ui.showBlurOverlay('announcement');
 
+    // Wake up screen (e.g., turn off Fully Kiosk screensaver)
+    this._card.turnOffWakeWordSwitch();
+
     // Show activity bar in speaking mode (save current state to restore later)
     if (this._card.ui._globalUI) {
       var barEl = this._card.ui._globalUI.querySelector('.vs-rainbow-bar');

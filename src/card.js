@@ -25,6 +25,7 @@ export class VoiceSatelliteCard extends HTMLElement {
 
     // Core state
     this._state = State.IDLE;
+    this._lastSyncedSatelliteState = null;
     this._config = Object.assign({}, DEFAULT_CONFIG);
     this._hass = null;
     this._connection = null;
@@ -176,6 +177,8 @@ export class VoiceSatelliteCard extends HTMLElement {
     }
 
     // Sync pipeline state to integration entity
+    // Don't sync back to idle/listening while TTS is still playing (barge-in restart)
+    if (this._tts.isPlaying && (newState === State.LISTENING || newState === State.IDLE)) return;
     this._syncSatelliteState(newState);
   }
 
@@ -183,14 +186,15 @@ export class VoiceSatelliteCard extends HTMLElement {
     var entityId = this._config.satellite_entity;
     if (!entityId || !this._hass || !this._hass.connection) return;
 
-    var self = this;
+    // Skip if same state as last sync
+    if (state === this._lastSyncedSatelliteState) return;
+    this._lastSyncedSatelliteState = state;
+
     this._hass.connection.sendMessagePromise({
       type: 'voice_satellite/update_state',
       entity_id: entityId,
       state: state,
-    }).catch(function (e) {
-      self._logger.error('satellite_state', 'Failed to sync state: ' + e);
-    });
+    }).catch(function () {});
   }
 
   updateInteractionState(interactionState) {
@@ -249,6 +253,7 @@ export class VoiceSatelliteCard extends HTMLElement {
     this._ui.hideBlurOverlay('pipeline');
     this._ui.updateForState(this._state, this._pipeline.serviceUnavailable, false);
     this.updateInteractionState('IDLE');
+    this._syncSatelliteState('IDLE');
 
     // Play any queued announcements now that the pipeline is idle
     this._announcement.playQueued();
