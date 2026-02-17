@@ -21,6 +21,7 @@ export class AnnouncementManager {
     this._currentAudio = null;
     this._clearTimeout = null;
     this._barWasVisible = false;
+    this._queued = null;
   }
 
   /**
@@ -42,11 +43,41 @@ export class AnnouncementManager {
       this._log.log('announce', 'Announcement #' + ann.id + ' ignored — already playing');
       return;
     }
+
+    // Queue if pipeline is active (not idle/listening)
+    var cardState = this._card.currentState;
+    var pipelineBusy = cardState === 'WAKE_WORD_DETECTED' ||
+      cardState === 'STT' || cardState === 'INTENT' || cardState === 'TTS';
+    if (pipelineBusy || this._card.tts.isPlaying) {
+      if (!this._queued || this._queued.id !== ann.id) {
+        this._queued = ann;
+        this._log.log('announce', 'Announcement #' + ann.id + ' queued — pipeline busy (' + cardState + ')');
+      }
+      return;
+    }
+
     this._lastAnnounceId = ann.id;
+    this._queued = null;
     this._log.log('announce', 'New announcement #' + ann.id +
       ': message="' + (ann.message || '') +
       '" media="' + (ann.media_id || '') + '"');
 
+    this._playAnnouncement(ann);
+  }
+
+  /**
+   * Called when the pipeline returns to idle — checks for queued announcements.
+   */
+  playQueued() {
+    if (!this._queued) return;
+    var ann = this._queued;
+    this._queued = null;
+
+    if (ann.id <= this._lastAnnounceId) return;
+    if (this._playing) return;
+
+    this._lastAnnounceId = ann.id;
+    this._log.log('announce', 'Playing queued announcement #' + ann.id);
     this._playAnnouncement(ann);
   }
 

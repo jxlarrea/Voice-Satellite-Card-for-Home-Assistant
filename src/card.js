@@ -232,6 +232,9 @@ export class VoiceSatelliteCard extends HTMLElement {
     this._ui.hideBlurOverlay('pipeline');
     this._ui.updateForState(this._state, this._pipeline.serviceUnavailable, false);
     this.updateInteractionState('IDLE');
+
+    // Play any queued announcements now that the pipeline is idle
+    this._announcement.playQueued();
   }
 
   turnOffWakeWordSwitch() {
