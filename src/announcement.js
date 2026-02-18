@@ -187,20 +187,26 @@ export class AnnouncementManager {
       }
     }
 
-    // Step 1: Play pre-announcement chime
-    var hasPreAnnounce = ann.preannounce_media_id && ann.preannounce_media_id !== '';
-
-    if (hasPreAnnounce) {
-      // Play custom pre-announcement media
-      this._log.log('announce', 'Playing pre-announcement media: ' + ann.preannounce_media_id);
-      this._playMedia(ann.preannounce_media_id, function () {
-        self._playMainAnnouncement(ann);
-      });
+    // Step 1: Play pre-announcement chime (unless preannounce is explicitly false)
+    if (ann.preannounce === false) {
+      // preannounce: false — skip chime entirely
+      this._log.log('announce', 'Preannounce disabled — skipping chime');
+      this._playMainAnnouncement(ann);
     } else {
-      // Play default chime (announcement-style: two-tone attention)
-      this._playAnnouncementChime(function () {
-        self._playMainAnnouncement(ann);
-      });
+      var hasPreAnnounce = ann.preannounce_media_id && ann.preannounce_media_id !== '';
+
+      if (hasPreAnnounce) {
+        // Play custom pre-announcement media
+        this._log.log('announce', 'Playing pre-announcement media: ' + ann.preannounce_media_id);
+        this._playMedia(ann.preannounce_media_id, function () {
+          self._playMainAnnouncement(ann);
+        });
+      } else {
+        // Play default chime (announcement-style: two-tone attention)
+        this._playAnnouncementChime(function () {
+          self._playMainAnnouncement(ann);
+        });
+      }
     }
   }
 

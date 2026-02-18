@@ -4,7 +4,7 @@
 
 Voice Satellite Card is a custom Home Assistant Lovelace card that turns any browser into a voice-activated satellite. It captures microphone audio, sends it to Home Assistant's Assist pipeline over WebSocket, and plays back TTS responses — all without leaving the HA dashboard.
 
-The source is organized as ES6 modules in `src/`, bundled via Webpack + Babel into a single `voice-satellite-card.min.js` for deployment. The card is invisible (returns `getCardSize() = 0`). All visual feedback is rendered via a global overlay appended to `document.body`, outside HA's Shadow DOM, so it persists across dashboard view changes. Current version: 3.1.0.
+The source is organized as ES6 modules in `src/`, bundled via Webpack + Babel into a single `voice-satellite-card.min.js` for deployment. The card is invisible (returns `getCardSize() = 0`). All visual feedback is rendered via a global overlay appended to `document.body`, outside HA's Shadow DOM, so it persists across dashboard view changes. Current version: 3.1.1.
 
 ---
 
@@ -1259,6 +1259,18 @@ The integration exposes a pending announcement via the satellite entity's `annou
 }
 ```
 
+When `preannounce: false` is set in the automation action, the attribute includes an explicit flag:
+
+```json
+{
+  "id": 1,
+  "message": "Dinner is ready!",
+  "media_id": "/api/tts_proxy/xxxxx.mp3",
+  "preannounce_media_id": "",
+  "preannounce": false
+}
+```
+
 Key detail: `media_id` contains the resolved TTS URL (e.g., `/api/tts_proxy/xxx.mp3`), not the media source reference. The integration resolves TTS text to a playable URL before exposing it.
 
 **ACK mechanism:** The integration's `async_announce()` blocks until the card sends a `voice_satellite/announce_finished` WebSocket command with the matching `announce_id`, or a 120s timeout expires.
@@ -1280,6 +1292,7 @@ For integration implementation details, see the [Voice Satellite Card Integratio
 2. Wake up screen (turn off wake word switch, e.g. Fully Kiosk screensaver)
 3. Save current activity bar state, show bar in `speaking` mode
 4. Play pre-announcement:
+   - If `preannounce === false`: skip chime entirely, go straight to TTS
    - If `preannounce_media_id` provided: play custom media via `<audio>` element
    - Otherwise: play default ding-dong chime (G5 784Hz → D5 587Hz via Web Audio API)
 5. Play main TTS media via `<audio>` element using `media_id` URL
@@ -1602,7 +1615,7 @@ When recreating or modifying this card, verify:
 - [ ] `AnnouncementManager` reconnect handler includes singleton guard (`window._voiceSatelliteInstance` check)
 - [ ] Subscription survives long idle/screensaver periods (unlike `set hass()` which depends on Lovelace)
 - [ ] Announcement `media_id` is the resolved playable URL (not `media_id_source`)
-- [ ] Pre-announcement chime: default ding-dong (G5 → D5) or custom media from `preannounce_media_id`
+- [ ] Pre-announcement chime: default ding-dong (G5 → D5) or custom media from `preannounce_media_id`; skipped entirely when `preannounce === false`
 - [ ] Announcements queue behind active pipeline (`_queued`), played via `playQueued()` on idle
 - [ ] `playQueued()` called from `card.onTTSComplete()` after normal completion
 - [ ] ACK sent via `voice_satellite/announce_finished` WebSocket command on playback complete
