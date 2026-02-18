@@ -77,6 +77,8 @@ Before using this card, ensure you have Home Assistant with the [Assist Pipeline
    - Conversation agent ([Home Assistant](https://www.home-assistant.io/integrations/conversation/), OpenAI, Qwen, etc.)
    - Text-to-Speech ([Piper](https://www.home-assistant.io/integrations/piper/), Kokoro, etc.)
 
+> **Important:** openWakeWord must be **installed as an add-on or integration** AND **enabled in your Assist pipeline**. The wake word option is hidden by default in the pipeline settings — go to **Settings → Voice assistants**, select your pipeline, click the **⋮ three-dot menu** at the top right, and choose **Edit in YAML** or look for the wake word dropdown that appears after clicking the dots. If you don't see a wake word option, openWakeWord is not installed or not detected by Home Assistant.
+
 For Timers and Announcements, the [Voice Satellite Card Integration](https://github.com/jxlarrea/voice-satellite-card-integration) is also required.
 
 ## Installation
@@ -393,17 +395,19 @@ Sentence templates support optional words in `[brackets]` and wildcards in `{bra
 
 ## Troubleshooting
 
-### Microphone not working
+### Nothing happens when I tap the microphone
 
-1. Check browser permissions for microphone access.
-2. Ensure you're using HTTPS (required for microphone access).
-3. Try the manual start button if auto-start fails.
+1. **Check HTTPS:** Browsers require HTTPS for microphone access. If you're using HTTP, the microphone permission prompt won't appear. Use HTTPS or access via `localhost`.
+2. **Check browser permissions:** Make sure the browser has microphone permission for your HA URL. Look for a microphone icon in the address bar.
+3. **Check Fully Kiosk settings:** If using Fully Kiosk, ensure **Advanced Web Settings → Microphone Access** is enabled and the HA URL is allowed.
+4. **Try the manual start:** If auto-start fails, tap the blue microphone button to start manually. Check the browser console (F12) for errors.
 
 ### Wake word not detected
 
-1. Verify that openWakeWord is running.
-2. Check that your Assist pipeline has wake word detection configured.
-3. Enable `debug: true` to see events in the browser console.
+1. **Verify openWakeWord is installed:** Go to **Settings → Add-ons** and confirm the openWakeWord add-on is installed and running. Alternatively, check **Settings → Devices & Services** if using the Wyoming openWakeWord integration.
+2. **Verify openWakeWord is enabled in your pipeline:** Go to **Settings → Voice assistants**, select your pipeline, and check that a wake word is selected. **This setting is hidden by default** — click the **⋮ three-dot menu** at the top right of the pipeline settings to reveal the wake word configuration option.
+3. **Check the correct pipeline is selected:** If you have multiple pipelines, make sure the card is using the one with wake word detection. Set `pipeline_id` in the card config, or ensure the correct pipeline is set as the default.
+4. Enable `debug: true` in the card config to see pipeline events in the browser console (F12).
 
 ### No audio response
 
