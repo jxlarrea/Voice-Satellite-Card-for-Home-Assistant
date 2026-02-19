@@ -217,7 +217,7 @@ export function renderPreview(shadowRoot, config) {
   const isChatStyle = cfg.bubble_style === 'chat';
   chat.style.width = `${cfg.bubble_container_width || 80}%`;
   if (isChatStyle) {
-    chat.style.alignItems = 'stretch';
+    chat.style.alignItems = 'flex-start';
     userMsg.style.alignSelf = 'flex-end';
     userMsg.style.textAlign = 'left';
     assistantMsg.style.alignSelf = 'flex-start';

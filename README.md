@@ -168,6 +168,10 @@ bar_gradient: '#FF7777, #FF9977, #FFCC77, #CCFF77, #77FFAA, #77DDFF, #77AAFF, #A
 background_blur: true               # Blurs the background when active
 background_blur_intensity: 5        # Blur effect intensity
 
+# Appearance - Bubble Style
+bubble_style: chat                 # 'centered' (bubbles centered) or 'chat' (user right, assistant left)
+bubble_container_width: 85         # Width of the bubble area as percentage (40-100)
+
 # Appearance - Transcription Bubble (User Speech)
 show_transcription: true           # Show/hide the transcription bubble
 transcription_font_size: 20        # Font size in pixels

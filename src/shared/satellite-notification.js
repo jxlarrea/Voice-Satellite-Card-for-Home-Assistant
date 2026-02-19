@@ -132,6 +132,12 @@ export function playNotification(mgr, ann, onComplete, logPrefix) {
   mgr.card.turnOffWakeWordSwitch();
   mgr.barWasVisible = mgr.card.ui.showBarSpeaking();
 
+  // Only center on screen for passive announcements (not ask_question or start_conversation)
+  const isPassive = !ann.ask_question && !ann.start_conversation;
+  if (isPassive) {
+    mgr.card.ui.setAnnouncementMode(true);
+  }
+
   // Pre-announcement
   if (ann.preannounce === false) {
     mgr.log.log(logPrefix, 'Preannounce disabled — skipping chime');
@@ -158,7 +164,11 @@ function _playMain(mgr, ann, onComplete, logPrefix) {
   const mediaUrl = ann.media_id || '';
 
   if (ann.message) {
-    mgr.card.ui.addChatMessage(ann.message, 'announcement');
+    // Passive announcements use centered 'announcement' style;
+    // interactive notifications (ask_question, start_conversation)
+    // use 'assistant' style so they follow the configured chat layout.
+    const isPassive = !ann.ask_question && !ann.start_conversation;
+    mgr.card.ui.addChatMessage(ann.message, isPassive ? 'announcement' : 'assistant');
   }
 
   if (mediaUrl) {
@@ -182,6 +192,7 @@ export function clearNotificationUI(mgr) {
     mgr.clearTimeoutId = null;
   }
 
+  mgr.card.ui.setAnnouncementMode(false);
   mgr.card.ui.clearAnnouncementBubbles();
   mgr.card.ui.hideBlurOverlay(BlurReason.ANNOUNCEMENT);
   mgr.card.ui.restoreBar(mgr.barWasVisible);

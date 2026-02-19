@@ -69,6 +69,8 @@ export class AskQuestionManager {
     this.currentAudio = null;
     this._log.log(LOG, `Question #${ann.id} playback complete`);
 
+    // ACK immediately on playback complete — signals the integration that
+    // the prompt was played. The integration then waits for question_answered.
     sendAck(this._card, ann.id, LOG);
     this._enterSttMode(ann);
   }
@@ -79,6 +81,8 @@ export class AskQuestionManager {
   _enterSttMode(ann) {
     this._log.log(LOG, 'Entering STT-only mode');
 
+    // Switch from passive announcement centering to interactive mode
+    this._card.ui.setAnnouncementMode(false);
     this._card.ui.showBlurOverlay(BlurReason.PIPELINE);
 
     const { pipeline } = this._card;
@@ -92,19 +96,44 @@ export class AskQuestionManager {
       this._card.tts.playChime('wake');
     }
 
+    // Track whether an answer was submitted so the cleanup timeout
+    // can release the server if STT never produced a result.
+    this._answerSent = false;
+
     pipeline.restartContinue(null, {
       end_stage: 'stt',
       onSttEnd: (text) => {
         this._log.log(LOG, `STT result: "${text}"`);
+        this._answerSent = true;
         this._processAnswer(announceId, text, isRemote);
       },
     });
+
+    // Safety: if STT never produces a result (pipeline timeout, run-end
+    // without error, etc.), send an empty answer to release the server
+    // and clean up after a generous window.
+    this._sttSafetyTimeout = setTimeout(() => {
+      if (!this._answerSent) {
+        this._log.log(LOG, `No STT result for #${announceId} — sending empty answer to release server`);
+        this._answerSent = true;
+        this._processAnswer(announceId, '', isRemote);
+      }
+    }, Timing.ASK_QUESTION_STT_SAFETY);
   }
 
   /**
    * Send answer to integration and show match feedback.
+   * Mirrors the original monolithic implementation: a safety cleanup timeout
+   * runs in parallel with the sendAnswer promise. Whichever completes first
+   * triggers cleanup; the other is a no-op via the `cleaned` guard.
    */
   _processAnswer(announceId, text, isRemote) {
+    // Clear the STT safety timeout — we have a result (or explicit empty)
+    if (this._sttSafetyTimeout) {
+      clearTimeout(this._sttSafetyTimeout);
+      this._sttSafetyTimeout = null;
+    }
+
     const { pipeline } = this._card;
     let cleaned = false;
     let matchedResult = null;
@@ -120,6 +149,8 @@ export class AskQuestionManager {
       this._card.ui.hideBlurOverlay(BlurReason.PIPELINE);
       pipeline.restart(0);
     };
+
+    // Safety timeout — if sendAnswer takes too long, clean up anyway
     setTimeout(cleanup, Timing.ASK_QUESTION_CLEANUP);
 
     sendAnswer(this._card, announceId, text, LOG).then((result) => {
@@ -131,7 +162,17 @@ export class AskQuestionManager {
       }
 
       if (!matched) {
-        this._card.ui.flashErrorBar();
+        this._card.ui.showErrorBar();
+        const bar = this._card.ui.element
+          ? this._card.ui.element.querySelector('.vs-rainbow-bar')
+          : null;
+        if (bar) {
+          bar.classList.add('error-flash');
+          bar.addEventListener('animationend', function handler() {
+            bar.classList.remove('error-flash');
+            bar.removeEventListener('animationend', handler);
+          });
+        }
       }
     });
   }

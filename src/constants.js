@@ -50,6 +50,7 @@ export const Timing = {
   INTENT_ERROR_DISPLAY: 3000,
   NO_MEDIA_DISPLAY: 3000,
   ASK_QUESTION_CLEANUP: 2000,
+  ASK_QUESTION_STT_SAFETY: 30000,
   MAX_RETRY_DELAY: 30000,
   RETRY_BASE_DELAY: 5000,
   VISIBILITY_DEBOUNCE: 500,
@@ -127,8 +128,8 @@ export const DEFAULT_CONFIG = {
   response_border_color: 'rgba(100, 200, 150, 0.5)',
   response_padding: 16,
   response_rounded: true,
-  bubble_style: 'centered',
-  bubble_container_width: 80,
+  bubble_style: 'chat',
+  bubble_container_width: 85,
 };
 
 /**

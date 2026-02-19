@@ -103,7 +103,7 @@ export class UIManager {
 
     // Bubble layout style
     const isChatStyle = cfg.bubble_style === 'chat';
-    chat.style.alignItems = isChatStyle ? 'stretch' : 'center';
+    chat.style.alignItems = isChatStyle ? 'flex-start' : 'center';
     chat.style.width = `${cfg.bubble_container_width || 80}%`;
     chat.style.maxWidth = `${cfg.bubble_container_width || 80}%`;
 
@@ -279,6 +279,12 @@ export class UIManager {
     const styleMap = { user: 'transcription', assistant: 'response', announcement: 'response' };
     this.applyBubbleStyle(msg, styleMap[type] || 'response');
 
+    // Announcements are non-interactive — always centered
+    if (type === 'announcement') {
+      msg.style.alignSelf = 'center';
+      msg.style.textAlign = 'center';
+    }
+
     container.appendChild(msg);
     return msg;
   }
@@ -311,6 +317,17 @@ export class UIManager {
       container.removeChild(container.firstChild);
     }
     container.classList.remove('visible');
+  }
+
+  /**
+   * Toggle announcement-mode centering on the chat container.
+   * @param {boolean} on
+   */
+  setAnnouncementMode(on) {
+    if (!this._globalUI) return;
+    const container = this._globalUI.querySelector('.vs-chat-container');
+    if (!container) return;
+    container.classList.toggle('announcement-mode', on);
   }
 
   /**

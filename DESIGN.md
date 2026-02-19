@@ -181,7 +181,7 @@ Only `voice-satellite-card.min.js` is committed to git. The readable version and
 - `INTERACTING_STATES` — array: [WAKE_WORD_DETECTED, STT, INTENT, TTS]
 - `EXPECTED_ERRORS` — array: `timeout`, `wake-word-timeout`, `stt-no-text-recognized`, `duplicate_wake_up_detected` (note: underscores, not dashes — HA API inconsistency)
 - `BlurReason` — enum: PIPELINE, TIMER, ANNOUNCEMENT
-- `Timing` — all timing constants in milliseconds: DOUBLE_TAP_THRESHOLD (400), TIMER_CHIME_INTERVAL (3000), PILL_EXPIRE_ANIMATION (400), PLAYBACK_WATCHDOG (30000), RECONNECT_DELAY (2000), INTENT_ERROR_DISPLAY (3000), NO_MEDIA_DISPLAY (3000), ASK_QUESTION_CLEANUP (2000), MAX_RETRY_DELAY (30000), RETRY_BASE_DELAY (5000), VISIBILITY_DEBOUNCE (500), DISCONNECT_GRACE (100)
+- `Timing` — all timing constants in milliseconds: DOUBLE_TAP_THRESHOLD (400), TIMER_CHIME_INTERVAL (3000), PILL_EXPIRE_ANIMATION (400), PLAYBACK_WATCHDOG (30000), RECONNECT_DELAY (2000), INTENT_ERROR_DISPLAY (3000), NO_MEDIA_DISPLAY (3000), ASK_QUESTION_CLEANUP (2000), ASK_QUESTION_STT_SAFETY (30000), MAX_RETRY_DELAY (30000), RETRY_BASE_DELAY (5000), VISIBILITY_DEBOUNCE (500), DISCONNECT_GRACE (100)
 - `DEFAULT_CONFIG` — full default configuration object with all card options
 - `seamlessGradient(colorList)` — takes a comma-separated color string, appends the first color to the end, returns a CSS `linear-gradient(90deg, ...)` string for seamless animation loops
 
@@ -385,8 +385,9 @@ Beyond state management, `UIManager` provides methods used by the notification s
 
 - `showBarSpeaking()` — saves current bar visibility, shows bar with speaking animation. Returns previous visibility state.
 - `restoreBar(wasVisible)` — restores bar to pre-notification state.
-- `addChatMessage(text, type)` — adds a styled bubble (type: `'announcement'`). Used by notifications for message display.
+- `addChatMessage(text, type)` — adds a styled bubble (type: `'announcement'` or `'assistant'`). Used by notifications for message display. Passive announcements use `'announcement'` (centered); interactive notifications (ask_question, start_conversation) use `'assistant'` (follows chat layout).
 - `clearAnnouncementBubbles()` — removes only announcement-type bubbles (not user/assistant chat).
+- `setAnnouncementMode(on)` — toggles `.announcement-mode` CSS class on the chat container. When active, the container is vertically and horizontally centered on the viewport instead of anchored to the bottom. Only used for passive announcements; interactive notifications (ask_question, start_conversation) use normal chat positioning.
 - `showTimerAlert(onDismiss)` — shows full-screen timer alert overlay with dismiss callback.
 - `flashErrorBar()` — shows red error bar, adds `error-flash` CSS class (3× blink animation), auto-removes on `animationend`.
 
@@ -896,9 +897,11 @@ All three notification features share a common lifecycle:
 1. **Subscribe** to `state_changed` events via `entity-subscription.js`
 2. **Process** with dedup (`_lastAnnounceId`) and pipeline-busy queuing
 3. **Claim** the notification ID so other managers skip it
-4. **Play** notification: blur → bar → preannounce chime/media → main media → message bubble → onComplete
+4. **Play** notification: blur → bar → announcement mode (passive only) → preannounce chime/media → main media → message bubble → onComplete
 5. **ACK** via `sendAck()` in `notification-comms.js`
-6. **Clear** UI via `clearNotificationUI()`
+6. **Clear** UI via `clearNotificationUI()` (also disables announcement mode)
+
+**Passive vs. Interactive notifications:** The shared lifecycle distinguishes passive announcements from interactive notifications (ask_question, start_conversation). Passive announcements enable **announcement mode** (centered viewport positioning via `.announcement-mode` CSS class) and use `'announcement'` bubble type (centered text). Interactive notifications skip announcement mode and use `'assistant'` bubble type (follows configured chat layout — left-aligned in "Chat" style).
 
 State fields initialized by `initNotificationState(mgr)` as public properties directly on the manager instance: `playing`, `currentAudio`, `clearTimeoutId`, `barWasVisible`, `queued`. Subscription state (`_subscribed`, `_unsubscribe`, `_entityId`, `_reconnectListener`) is managed by `entity-subscription.js` using underscore-prefixed properties set directly on the manager.
 
@@ -913,13 +916,16 @@ After playback + ACK: auto-clears after `announcement_display_duration` seconds 
 ### 22.3 Ask Question (`ask-question/index.js`)
 
 After playback + ACK:
-1. Wake chime (browser only)
-2. STT-only mode via `pipeline.restartContinue(null, { end_stage: 'stt', onSttEnd: callback })`
-3. Question bubble stays visible during STT
-4. `sendAnswer()` in `ask-question/comms.js` → `voice_satellite/question_answered` → `{ success, matched, id }`
-5. Done chime on match, error chime + `flashErrorBar()` on no match
-6. 2s cleanup timer (immediate, not after WS round-trip)
-7. `askQuestionHandled` flag prevents `handleRunEnd` UI cleanup
+1. Disables announcement mode (switches to interactive chat positioning)
+2. Wake chime (browser only)
+3. STT-only mode via `pipeline.restartContinue(null, { end_stage: 'stt', onSttEnd: callback })`
+4. Question bubble stays visible during STT (rendered as `'assistant'` type)
+5. `sendAnswer()` in `ask-question/comms.js` → `voice_satellite/question_answered` → `{ success, matched, id }`
+6. Done chime on match, error chime + `flashErrorBar()` on no match
+7. 2s cleanup timer (immediate, not after WS round-trip)
+8. `askQuestionHandled` flag prevents `handleRunEnd` UI cleanup
+
+**STT Safety Timeout:** A 30s safety timeout (`Timing.ASK_QUESTION_STT_SAFETY`) ensures the server is released if STT never produces a result (no speech detected, pipeline dies, run-end without error, etc.). Tracked by `_answerSent` flag — if still `false` when the timer fires, an empty answer is sent via `_processAnswer(announceId, '', isRemote)`, which triggers `sendAnswer` with an empty sentence. The server receives this and unblocks `async_internal_ask_question`. The safety timeout is cleared if a real answer comes through first.
 
 ### 22.4 Start Conversation (`start-conversation/index.js`)
 
@@ -1012,7 +1018,13 @@ When recreating or modifying this card, verify:
 - [ ] All three managers use `satellite-notification.js` lifecycle
 - [ ] ACK via `sendAck()` in `notification-comms.js` (takes `card`)
 - [ ] Queue behind active pipeline, `playQueued()` on all three managers
+- [ ] Passive announcements enable announcement mode (centered positioning); interactive notifications (ask_question, start_conversation) do not
+- [ ] Passive announcements use `'announcement'` bubble type; interactive notifications use `'assistant'` bubble type
+- [ ] `clearNotificationUI()` disables announcement mode
 - [ ] Ask-question `askQuestionHandled` prevents `handleRunEnd` cleanup
+- [ ] Ask-question disables announcement mode before entering STT
+- [ ] Ask-question STT safety timeout (30s) sends empty answer to release server if no speech detected
+- [ ] Ask-question `_answerSent` flag prevents double-submit from both STT callback and safety timeout
 - [ ] Ask-question cleanup starts immediately (2s, not after WS)
 - [ ] Start-conversation clears UI before entering STT mode
 
@@ -1028,4 +1040,3 @@ When recreating or modifying this card, verify:
 - [ ] `state_entity` updates only on WAKE_WORD_DETECTED (ACTIVE) and completion/cancel (IDLE)
 - [ ] `state_entity` stays ACTIVE during continue conversation
 - [ ] `onTTSComplete()` calls `playQueued()` on all three notification managers after cleanup
-

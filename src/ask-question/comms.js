@@ -21,12 +21,14 @@ export function sendAnswer(card, announceId, sentence, logPrefix) {
     return Promise.resolve(null);
   }
 
-  return connection.sendMessagePromise({
+  const payload = {
     type: 'voice_satellite/question_answered',
     entity_id: config.satellite_entity,
     announce_id: announceId,
     sentence: sentence || '',
-  }).then((result) => {
+  };
+
+  return connection.sendMessagePromise(payload).then((result) => {
     const matched = result?.matched;
     const matchId = result?.id;
     log.log(logPrefix, `Answer sent for #${announceId}: "${sentence}" — matched: ${matched}${matchId ? ` (id: ${matchId})` : ''}`);

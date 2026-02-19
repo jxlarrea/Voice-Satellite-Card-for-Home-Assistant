@@ -134,6 +134,12 @@
   pointer-events: auto;
 }
 
+#voice-satellite-ui .vs-chat-container.announcement-mode {
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%);
+}
+
 #voice-satellite-ui .vs-chat-msg {
   max-width: 85%;
   padding: 12px;
