@@ -26,7 +26,7 @@ Home Assistant's built-in voice features require dedicated hardware like ESPHome
 
 Perfect for wall-mounted tablets, kiosk displays, or any browser-based Home Assistant setup.
 
-https://github.com/user-attachments/assets/50f51ebc-be70-4ea2-a1b5-8d80446f55c2
+https://github.com/user-attachments/assets/77dda388-330c-4544-84ea-0ead6cdaad17
 
 ## Important: Browser Requirements
 
