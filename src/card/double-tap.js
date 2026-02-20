@@ -49,6 +49,7 @@ export class DoubleTapHandler {
           this._card.tts.stop();
         }
 
+        this._card.stopWakeSwitchKeepAlive();
         this._card.pipeline.clearContinueState();
         this._card.setState(State.IDLE);
         this._card.chat.clear();

@@ -21,7 +21,7 @@ import { StartConversationManager } from '../start-conversation';
 import { getConfigForm } from '../editor';
 import { isEditorPreview, renderPreview } from '../editor/preview.js';
 import * as singleton from '../shared/singleton.js';
-import { setState, handleStartClick, startListening, onTTSComplete, handlePipelineMessage } from './events.js';
+import { setState, handleStartClick, startListening, onTTSComplete, handlePipelineMessage, startWakeSwitchKeepAlive, stopWakeSwitchKeepAlive } from './events.js';
 import { syncSatelliteState, updateInteractionState, turnOffWakeWordSwitch } from './comms.js';
 
 export class VoiceSatelliteCard extends HTMLElement {
@@ -170,6 +170,8 @@ export class VoiceSatelliteCard extends HTMLElement {
   onPipelineMessage(message) { handlePipelineMessage(this, message); }
   onTTSComplete(playbackFailed) { onTTSComplete(this, playbackFailed); }
   turnOffWakeWordSwitch() { turnOffWakeWordSwitch(this); }
+  startWakeSwitchKeepAlive() { startWakeSwitchKeepAlive(this); }
+  stopWakeSwitchKeepAlive() { stopWakeSwitchKeepAlive(); }
   updateInteractionState(state) { updateInteractionState(this, state); }
 
   // --- Private ---

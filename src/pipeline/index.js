@@ -269,6 +269,7 @@ export class PipelineManager {
 
   finishRunEnd() {
     this._pendingRunEnd = false;
+    this._card.stopWakeSwitchKeepAlive();
     this._card.chat.clear();
     this._card.ui.hideBlurOverlay(BlurReason.PIPELINE);
     this._card.setState(State.IDLE);

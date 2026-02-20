@@ -129,7 +129,7 @@ export function playNotification(mgr, ann, onComplete, logPrefix) {
 
   // UI: blur overlay + wake screen + bar
   mgr.card.ui.showBlurOverlay(BlurReason.ANNOUNCEMENT);
-  mgr.card.turnOffWakeWordSwitch();
+  mgr.card.startWakeSwitchKeepAlive();
   mgr.barWasVisible = mgr.card.ui.showBarSpeaking();
 
   // Only center on screen for passive announcements (not ask_question or start_conversation)

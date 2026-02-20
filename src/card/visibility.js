@@ -38,6 +38,7 @@ export class VisibilityManager {
 
       if (INTERACTING_STATES.includes(this._card.currentState)) {
         this._log.log('visibility', 'Tab hidden during interaction — cleaning up UI');
+        this._card.stopWakeSwitchKeepAlive();
         this._card.chat.clear();
         this._card.ui.hideBlurOverlay(BlurReason.PIPELINE);
         this._card.pipeline.clearContinueState();

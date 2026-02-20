@@ -129,10 +129,7 @@ voice-satellite-card/
 ├── LICENSE                               ← MIT License
 ├── .gitignore                            ← Ignores node_modules/, .js, .js.map (not .min.js)
 ├── README.md                             ← User-facing docs, badges, installation, configuration
-├── DESIGN.md                             ← This file — architecture, implementation details
-└── .vscode/
-    ├── settings.json                     ← Editor config
-    └── tasks.json                        ← Ctrl+Shift+B → npm run dev
+└── DESIGN.md                             ← This file — architecture, implementation details
 ```
 
 ### 3.2 Layering Rules
@@ -164,8 +161,6 @@ The version number is defined once in `package.json` and injected at build time 
 
 Only `voice-satellite-card.min.js` is committed to git. The readable version and source map are gitignored (local debugging only).
 
-**VS Code integration:** `.vscode/tasks.json` maps **Ctrl+Shift+B** to `npm run dev` (default build task).
-
 **GitHub infrastructure:**
 
 - **Release workflow** (`.github/workflows/release.yml`): Triggers on GitHub release creation or manual `workflow_dispatch`. Checks out code, installs Node 20, runs `npm ci && npm run build`, then uploads `voice-satellite-card.min.js` as a release asset via `softprops/action-gh-release@v2`.
@@ -181,7 +176,7 @@ Only `voice-satellite-card.min.js` is committed to git. The readable version and
 - `INTERACTING_STATES` — array: [WAKE_WORD_DETECTED, STT, INTENT, TTS]
 - `EXPECTED_ERRORS` — array: `timeout`, `wake-word-timeout`, `stt-no-text-recognized`, `duplicate_wake_up_detected` (note: underscores, not dashes — HA API inconsistency)
 - `BlurReason` — enum: PIPELINE, TIMER, ANNOUNCEMENT
-- `Timing` — all timing constants in milliseconds: DOUBLE_TAP_THRESHOLD (400), TIMER_CHIME_INTERVAL (3000), PILL_EXPIRE_ANIMATION (400), PLAYBACK_WATCHDOG (30000), RECONNECT_DELAY (2000), INTENT_ERROR_DISPLAY (3000), NO_MEDIA_DISPLAY (3000), ASK_QUESTION_CLEANUP (2000), ASK_QUESTION_STT_SAFETY (30000), MAX_RETRY_DELAY (30000), RETRY_BASE_DELAY (5000), VISIBILITY_DEBOUNCE (500), DISCONNECT_GRACE (100)
+- `Timing` — all timing constants in milliseconds: DOUBLE_TAP_THRESHOLD (400), TIMER_CHIME_INTERVAL (3000), PILL_EXPIRE_ANIMATION (400), PLAYBACK_WATCHDOG (30000), RECONNECT_DELAY (2000), INTENT_ERROR_DISPLAY (3000), NO_MEDIA_DISPLAY (3000), ASK_QUESTION_CLEANUP (2000), ASK_QUESTION_STT_SAFETY (30000), MAX_RETRY_DELAY (30000), RETRY_BASE_DELAY (5000), VISIBILITY_DEBOUNCE (500), DISCONNECT_GRACE (100), WAKE_SWITCH_INTERVAL (5000)
 - `DEFAULT_CONFIG` — full default configuration object with all card options
 - `seamlessGradient(colorList)` — takes a comma-separated color string, appends the first color to the end, returns a CSS `linear-gradient(90deg, ...)` string for seamless animation loops
 
@@ -221,6 +216,8 @@ Each manager receives the card instance via its constructor. The card exposes pu
 - `card.onPipelineMessage(message)` → `handlePipelineMessage(card, message)` in events.js
 - `card.updateInteractionState(state)` → `updateInteractionState(card, state)` in comms.js
 - `card.turnOffWakeWordSwitch()` → `turnOffWakeWordSwitch(card)` in comms.js
+- `card.startWakeSwitchKeepAlive()` → `startWakeSwitchKeepAlive(card)` in events.js
+- `card.stopWakeSwitchKeepAlive()` → `stopWakeSwitchKeepAlive()` in events.js
 
 ### 3.6 Card Lifecycle
 
@@ -280,7 +277,7 @@ console.info('%c VOICE-SATELLITE-CARD %c v' + VERSION + ' ', ...);
 
 1. **Barge-in check:** If current state is WAKE_WORD_DETECTED, STT, or INTENT — skip cleanup. TTS excluded from guard.
 2. **Continue conversation:** If `!playbackFailed` and `shouldContinue` and `continueConversationId` — keep UI, call `restartContinue(conversationId)`.
-3. **Normal completion:** Done chime (browser only), clear chat, hide blur, update interaction state to IDLE, sync satellite state, then `playQueued()` on all three notification managers.
+3. **Normal completion:** Stop wake switch keep-alive, done chime (browser only), clear chat, hide blur, update interaction state to IDLE, sync satellite state, then `playQueued()` on all three notification managers.
 
 ### 3.9 Satellite State Synchronization
 
@@ -296,7 +293,7 @@ Via `syncSatelliteState()` in `card/comms.js`. Sends `voice_satellite/update_sta
 
 ### 3.11 Deferred Run-End
 
-When `run-end` arrives while TTS is playing, `pendingRunEnd = true`. Resolved when `onTTSComplete()` handles cleanup. `finishRunEnd()` clears flag, clears chat, hides blur, sets state to IDLE, then restarts pipeline (unless `serviceUnavailable` is true, in which case retry is already scheduled).
+When `run-end` arrives while TTS is playing, `pendingRunEnd = true`. Resolved when `onTTSComplete()` handles cleanup. `finishRunEnd()` clears flag, stops wake switch keep-alive, clears chat, hides blur, sets state to IDLE, then restarts pipeline (unless `serviceUnavailable` is true, in which case retry is already scheduled).
 
 ---
 
@@ -466,11 +463,11 @@ Normal operational events — immediate restart, no error chime, no red bar:
 | `stt-no-text-recognized` | User spoke but no text recognized |
 | `duplicate_wake_up_detected` | Wake word already being processed (underscores, not dashes) |
 
-**Interaction-aware cleanup:** If user was mid-interaction (`INTERACTING_STATES`), transitions to IDLE, clears chat/blur, plays done chime before restarting.
+**Interaction-aware cleanup:** If user was mid-interaction (`INTERACTING_STATES`), stops wake switch keep-alive, transitions to IDLE, clears chat/blur, plays done chime before restarting.
 
 ### 8.2 Unexpected Errors
 
-All other error codes: error chime (if interacting), red error bar, `serviceUnavailable = true`, retry with backoff.
+All other error codes: stop wake switch keep-alive (if interacting), error chime (if interacting), red error bar, `serviceUnavailable = true`, retry with backoff.
 
 ### 8.3 Intent Errors
 
@@ -502,7 +499,7 @@ Linear: `Math.min(Timing.RETRY_BASE_DELAY * retryCount, Timing.MAX_RETRY_DELAY)`
 
 ### 9.4 Tab Visibility
 
-**Hidden:** `isPaused` set immediately (blocks events), interaction UI cleaned up, then after `Timing.VISIBILITY_DEBOUNCE` (500ms) audio paused → PAUSED.
+**Hidden:** `isPaused` set immediately (blocks events), interaction UI cleaned up (including `stopWakeSwitchKeepAlive`), then after `Timing.VISIBILITY_DEBOUNCE` (500ms) audio paused → PAUSED.
 
 **Visible:** `audio.resume()`, pipeline state reset (`pipeline.resetForResume()`), `pipeline.restart(0)` — always fresh start.
 
@@ -841,7 +838,7 @@ Continue state cleared in all paths: barge-in, expected errors, tab hidden, `res
 
 `DoubleTapHandler` (`card/double-tap.js`) — `touchstart` and `click` on `document`. Two taps within `Timing.DOUBLE_TAP_THRESHOLD` (400ms). Touch/click dedup via `_lastTapWasTouch`.
 
-**Actions:** Stop TTS → clear continue state → set IDLE → clear chat → hide blur → update interaction state → play done chime → restart pipeline.
+**Actions:** Stop TTS → stop wake switch keep-alive → clear continue state → set IDLE → clear chat → hide blur → update interaction state → play done chime → restart pipeline.
 
 **Timer alert:** Double-tap during alert → dismisses (checked before interaction cancel).
 
@@ -899,9 +896,36 @@ Categories: `state`, `lifecycle`, `mic`, `pipeline`, `event`, `error`, `recovery
 | `last_timer_event` | `string` | Event type: started, cancelled, finished |
 | `announcement` | `dict` | Pending notification (announcement/ask-question/start-conversation) |
 
-### 21.2 Wake Word Switch
+### 21.2 Wake Word Switch (Screensaver Keep-Alive)
 
-`turnOffWakeWordSwitch()` in `card/comms.js` — calls `homeassistant.turn_off` service (works with any toggleable entity: `switch`, `input_boolean`, `light`, etc.). Triggered on: wake word detected, announcement received, timer alert.
+The `wake_word_switch` config option specifies a toggleable entity (`switch`, `input_boolean`, `light`, etc.) to keep off during interactive sessions. This prevents screensavers (e.g. Fully Kiosk Browser) from activating while the user is mid-conversation.
+
+**Single turn-off call:** `turnOffWakeWordSwitch(card)` in `card/comms.js` — calls `homeassistant.turn_off` service. A pure comms function.
+
+**Keep-alive interval:** `startWakeSwitchKeepAlive(card)` / `stopWakeSwitchKeepAlive()` in `card/events.js` — manages a repeating interval (`Timing.WAKE_SWITCH_INTERVAL`, 5s) that continuously calls `turnOffWakeWordSwitch`. Module-scoped `_wakeSwitchIntervalId` tracks the interval. `startWakeSwitchKeepAlive` is idempotent (no-op if already running) and fires an immediate call before starting the interval. `stopWakeSwitchKeepAlive` is also idempotent.
+
+**Immediate calls on state transitions:** `setState()` in `card/events.js` fires `turnOffWakeWordSwitch(card)` on every transition into an `INTERACTING_STATES` state (WAKE_WORD_DETECTED, STT, INTENT, TTS). This ensures the screensaver is turned off immediately at each pipeline step, independent of the keep-alive interval.
+
+**Entry points** (start keep-alive interval):
+
+| Trigger | Location |
+|---------|----------|
+| Wake word detected | `handleWakeWordEnd()` in `pipeline/events.js` |
+| Notification playback | `playNotification()` in `shared/satellite-notification.js` |
+| Timer alert | `showAlert()` in `timer/ui.js` |
+
+**Exit points** (stop keep-alive interval):
+
+| Trigger | Location |
+|---------|----------|
+| TTS normal completion | `onTTSComplete()` in `card/events.js` |
+| Double-tap cancel | `DoubleTapHandler` in `card/double-tap.js` |
+| Tab hidden during interaction | `VisibilityManager._handleChange()` in `card/visibility.js` |
+| Expected pipeline error during interaction | `handleError()` in `pipeline/events.js` |
+| Unexpected pipeline error during interaction | `handleError()` in `pipeline/events.js` |
+| Timer alert dismissed | `clearAlert()` in `timer/ui.js` |
+| Ask-question answer cleanup | `_processAnswer()` in `ask-question/index.js` |
+| Deferred run-end (safety net) | `finishRunEnd()` in `pipeline/index.js` |
 
 ---
 
@@ -914,7 +938,7 @@ All three notification features share a common lifecycle:
 1. **Subscribe** to `state_changed` events via `entity-subscription.js`
 2. **Process** with dedup (`_lastAnnounceId`) and pipeline-busy queuing
 3. **Claim** the notification ID so other managers skip it
-4. **Play** notification: blur → bar → announcement mode (passive only) → preannounce chime/media → main media → message bubble → onComplete
+4. **Play** notification: blur → wake switch keep-alive → bar → announcement mode (passive only) → preannounce chime/media → main media → message bubble → onComplete
 5. **ACK** via `sendAck()` in `notification-comms.js`
 6. **Clear** UI via `clearNotificationUI()` (also disables announcement mode)
 
@@ -939,7 +963,7 @@ After playback + ACK:
 4. Question bubble stays visible during STT (rendered as `'assistant'` type)
 5. `sendAnswer()` in `ask-question/comms.js` → `voice_satellite/question_answered` → `{ success, matched, id }`
 6. Done chime on match, error chime + `flashErrorBar()` on no match
-7. 2s cleanup timer (immediate, not after WS round-trip)
+7. 2s cleanup timer (immediate, not after WS round-trip) — stops wake switch keep-alive, clears notification UI, clears chat, hides blur, restarts pipeline
 8. `askQuestionHandled` flag prevents `handleRunEnd` UI cleanup
 
 **STT Safety Timeout:** A 30s safety timeout (`Timing.ASK_QUESTION_STT_SAFETY`) ensures the server is released if STT never produces a result (no speech detected, pipeline dies, run-end without error, etc.). Tracked by `_answerSent` flag — if still `false` when the timer fires, an empty answer is sent via `_processAnswer(announceId, '', isRemote)`, which triggers `sendAnswer` with an empty sentence. The server receives this and unblocks `async_internal_ask_question`. The safety timeout is cleared if a real answer comes through first.
@@ -968,7 +992,7 @@ Notifications stored in `queued` when interaction active. `onTTSComplete()` call
 
 **Timer pills** (`timer/ui.js`): Positioned pills, multiple stack, updated every second. Format: `HH:MM:SS` via `shared/format.js`.
 
-**Timer alert** (`timer/ui.js`): Full-screen overlay, repeating `CHIME_ALERT` at `Timing.TIMER_CHIME_INTERVAL` (3s), blur `BlurReason.TIMER`, wake switch off. Auto-dismiss after `timer_finished_duration` (0 = manual only).
+**Timer alert** (`timer/ui.js`): Full-screen overlay, repeating `CHIME_ALERT` at `Timing.TIMER_CHIME_INTERVAL` (3s), blur `BlurReason.TIMER`, wake switch keep-alive started. `clearAlert()` stops the keep-alive. Auto-dismiss after `timer_finished_duration` (0 = manual only).
 
 **Timer cancel** (`timer/comms.js`): `sendCancelTimer(card, timerName)` via `conversation.process` with built-in HA agent. Visual removal is optimistic.
 
@@ -1089,6 +1113,16 @@ When recreating or modifying this card, verify:
 - [ ] Ask-question `_answerSent` flag prevents double-submit from both STT callback and safety timeout
 - [ ] Ask-question cleanup starts immediately (2s, not after WS)
 - [ ] Start-conversation clears UI before entering STT mode
+
+**Wake Switch Keep-Alive:**
+- [ ] `turnOffWakeWordSwitch()` in `card/comms.js` (pure service call)
+- [ ] `startWakeSwitchKeepAlive()` / `stopWakeSwitchKeepAlive()` in `card/events.js` (interval lifecycle)
+- [ ] Module-scoped `_wakeSwitchIntervalId` (not on card or window)
+- [ ] `startWakeSwitchKeepAlive` is idempotent, fires immediate call then starts interval
+- [ ] `stopWakeSwitchKeepAlive` is idempotent
+- [ ] `setState()` calls `turnOffWakeWordSwitch` immediately on every `INTERACTING_STATES` transition
+- [ ] Keep-alive started at: wake word detected, notification playback, timer alert
+- [ ] Keep-alive stopped at: TTS complete, double-tap cancel, tab hidden, expected/unexpected errors, timer dismiss, ask-question cleanup, finishRunEnd
 
 **Browser:**
 - [ ] `voice_isolation` uses `advanced` constraint array

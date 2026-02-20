@@ -7,9 +7,34 @@
  * Uses ONLY public accessors on the card instance.
  */
 
-import { State, INTERACTING_STATES, BlurReason } from '../constants.js';
-import { syncSatelliteState, updateInteractionState } from './comms.js';
+import { State, INTERACTING_STATES, BlurReason, Timing } from '../constants.js';
+import { syncSatelliteState, updateInteractionState, turnOffWakeWordSwitch } from './comms.js';
 import * as singleton from '../shared/singleton.js';
+
+// ─── Wake Switch Keep-Alive ─────────────────────────────────────────
+
+let _wakeSwitchIntervalId = null;
+
+/**
+ * Start a repeating interval that turns off the wake word switch
+ * every WAKE_SWITCH_INTERVAL ms while interactive.
+ * Idempotent — no-op if already running.
+ * @param {import('./index.js').VoiceSatelliteCard} card
+ */
+export function startWakeSwitchKeepAlive(card) {
+  if (_wakeSwitchIntervalId) return;
+  turnOffWakeWordSwitch(card);
+  _wakeSwitchIntervalId = setInterval(() => turnOffWakeWordSwitch(card), Timing.WAKE_SWITCH_INTERVAL);
+}
+
+/**
+ * Stop the wake switch keep-alive interval.
+ */
+export function stopWakeSwitchKeepAlive() {
+  if (!_wakeSwitchIntervalId) return;
+  clearInterval(_wakeSwitchIntervalId);
+  _wakeSwitchIntervalId = null;
+}
 
 /**
  * Set card state and update UI.
@@ -21,6 +46,10 @@ export function setState(card, newState) {
   card.currentState = newState;
   card.logger.log('state', `${oldState} → ${newState}`);
   card.ui.updateForState(newState, card.pipeline.serviceUnavailable, card.tts.isPlaying);
+
+  if (INTERACTING_STATES.includes(newState)) {
+    turnOffWakeWordSwitch(card);
+  }
 
   if (newState === State.WAKE_WORD_DETECTED) {
     updateInteractionState(card, 'ACTIVE');
@@ -131,6 +160,7 @@ export function onTTSComplete(card, playbackFailed) {
     card.tts.playChime('done');
   }
 
+  card.stopWakeSwitchKeepAlive();
   card.chat.clear();
   card.ui.hideBlurOverlay(BlurReason.PIPELINE);
   card.ui.updateForState(card.currentState, card.pipeline.serviceUnavailable, false);

@@ -90,7 +90,7 @@ export function handleWakeWordEnd(mgr, eventData) {
   if (mgr.card.config.chime_on_wake_word) {
     tts.playChime('wake');
   }
-  mgr.card.turnOffWakeWordSwitch();
+  mgr.card.startWakeSwitchKeepAlive();
   mgr.card.ui.showBlurOverlay(BlurReason.PIPELINE);
 }
 
@@ -258,6 +258,7 @@ export function handleError(mgr, errorData) {
 
     if (INTERACTING_STATES.includes(mgr.card.currentState)) {
       mgr.log.log('ui', 'Cleaning up interaction UI after expected error');
+      mgr.card.stopWakeSwitchKeepAlive();
       mgr.card.setState(State.IDLE);
       mgr.card.chat.clear();
       mgr.card.ui.hideBlurOverlay(BlurReason.PIPELINE);
@@ -276,6 +277,7 @@ export function handleError(mgr, errorData) {
   mgr.log.error('error', `Unexpected: ${errorCode} — ${errorMessage}`);
 
   const wasInteracting = INTERACTING_STATES.includes(mgr.card.currentState);
+  if (wasInteracting) mgr.card.stopWakeSwitchKeepAlive();
   mgr.binaryHandlerId = null;
 
   if (wasInteracting && mgr.card.config.chime_on_wake_word) {

@@ -141,6 +141,7 @@ export class AskQuestionManager {
     const cleanup = () => {
       if (cleaned) return;
       cleaned = true;
+      this._card.stopWakeSwitchKeepAlive();
       if (matchedResult !== null && !matchedResult) {
         this._card.ui.clearErrorBar();
       }
