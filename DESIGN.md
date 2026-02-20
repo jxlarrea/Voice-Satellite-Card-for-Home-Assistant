@@ -736,6 +736,13 @@ Module-scoped variables (not window globals):
 
 `bar_position` (bottom/top), `bar_height` (2-40, default 16), `bar_gradient` (rainbow), `background_blur` (true), `background_blur_intensity` (0-20, default 5).
 
+### Bubble Layout
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `bubble_style` | string | `'chat'` | `'centered'` (all bubbles centered) or `'chat'` (user right, assistant left) |
+| `bubble_container_width` | number | `85` | Width of the bubble area as percentage (40-100). Useful for large screens. |
+
 ### Bubble Styling
 
 9-property pattern via `shared/style-utils.js`: `show_*`, `*_font_size` (20), `*_font_family` ('inherit'), `*_font_color`, `*_font_bold` (true), `*_font_italic` (false), `*_background`, `*_border_color`, `*_padding` (16), `*_rounded` (true). Applied to transcription (`transcription_*`), response (`response_*`), and timer (`timer_*`) prefixes.
@@ -813,6 +820,16 @@ Sets `_playing = false`. Clears watchdog and end timer. Browser: nulls `onended`
 2. `onTTSComplete()` checks → clears state, resets `chat.streamEl`, calls `restartContinue(conversationId)`
 3. `restartContinue()` stops pipeline, sets `continueMode = true`, starts with `start_stage: 'stt'` + `conversation_id`
 4. `handleRunStart()` checks `continueMode` → sets state to STT instead of LISTENING
+
+**`restartContinue(conversationId, opts = {})`** — dual-purpose method:
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `conversationId` | `string\|null` | — | Conversation ID for multi-turn. `null` for fresh conversation (start_conversation, ask_question). |
+| `opts.end_stage` | `string` | `'tts'` | Pipeline end stage. `'stt'` for ask-question (STT-only pipeline). |
+| `opts.onSttEnd` | `function\|null` | `null` | Callback for STT-only pipelines. Stored as `_askQuestionCallback`. Called by `handleSttEnd()` and `handleError()` with the transcribed text (or empty string on error). |
+
+When `onSttEnd` is provided, `handleSttEnd()` calls the callback instead of continuing to intent/TTS. `handleError()` also checks for the callback and invokes it with `''` so the caller always gets a result.
 
 ### 16.2 Cleanup
 
@@ -957,7 +974,52 @@ Notifications stored in `queued` when interaction active. `onTTSComplete()` call
 
 ---
 
-## 24. Implementation Checklist
+## 25. Known Gotchas & Non-Obvious Traps
+
+This section captures hard-won lessons from debugging. Read these before making changes.
+
+### 25.1 Pipeline Event Format
+HA's `subscribeMessage` delivers events DIRECTLY as `{ type: "run-start", data: {...} }`. They are NOT wrapped in `{ type: "event", event: {...} }` like other HA subscriptions. Access `message.type` and `message.data`, never `message.event`.
+
+### 25.2 `input.timeout: 0` for Wake Word
+If you omit `input.timeout` from the pipeline subscription, HA defaults to 3 seconds and fires `wake-word-timeout` errors constantly. Set it to `0` for indefinite listening. But for STT start stage, omit `input.timeout` entirely — server-side VAD handles silence detection.
+
+### 25.3 `duplicate_wake_up_detected` Uses Underscores
+All other HA error codes use dashes (`stt-no-text-recognized`, `wake-word-timeout`). This one uses underscores. The `EXPECTED_ERRORS` array must match exactly.
+
+### 25.4 Ask Question ACK Timing
+The card sends the ACK (`announce_finished`) BEFORE entering STT mode, not after. The integration uses the ACK to know TTS playback is done and then waits for the `question_answered` WS call. If ACK came after STT, the integration would time out waiting for the announce to finish.
+
+### 25.5 Ask Question Match Result Race
+The integration's `async_internal_ask_question` has a `finally` block that clears state. The `_question_match_result` is intentionally NOT cleared there because of an asyncio scheduling race: after `_question_match_event.set()` fires, both the WS handler (awaiting the event) and the `finally` block are ready to run. The scheduler might run `finally` first, clearing the result before the WS handler reads it. See integration DESIGN.md §6.7 for full details.
+
+### 25.6 Passive vs. Interactive Notification Positioning
+Passive announcements center on viewport (`.announcement-mode` CSS class). Interactive notifications (ask_question, start_conversation) must NOT use announcement mode — they follow the configured chat layout. The `isPassive` check (`!ann.ask_question && !ann.start_conversation`) in `satellite-notification.js` controls both positioning and bubble type.
+
+### 25.7 Bubble Types for Notifications
+Passive announcements use `'announcement'` type (centered, `alignSelf: center`). Interactive notifications use `'assistant'` type (follows `bubble_style` config — left-aligned in chat mode). Using the wrong type causes jarring layout shifts.
+
+### 25.8 STT Safety Timeout for Server Release
+If the card's STT pipeline ends without producing a result (no speech, pipeline dies, `run-end` without error), the server is left waiting on `_question_event` indefinitely. The 30s `ASK_QUESTION_STT_SAFETY` timeout sends an empty answer to release it. The `_answerSent` flag prevents double-submission if both the STT callback and safety timeout fire.
+
+### 25.9 TTS Ghost Events
+When stopping TTS playback (`tts.stop()`), null `onended` and `onerror` handlers BEFORE calling `pause()`. Otherwise the pause triggers `onended`, which calls `_onComplete()`, which can trigger continue-conversation or cleanup incorrectly.
+
+### 25.10 Blur Reference Counting
+`showBlurOverlay` / `hideBlurOverlay` use reason-based reference counting (`BlurReason.PIPELINE`, `TIMER`, `ANNOUNCEMENT`). The blur is only hidden when ALL reasons are cleared. Forgetting to hide a reason leaves a permanent blur overlay.
+
+### 25.11 Singleton `isActive()` vs `isOwner()`
+Before `singleton.claim()`, `isOwner()` returns true for all card instances (since the stored instance is null). The `isActive()` check gates subscriptions so they only fire after a card has successfully started. Without this, every card instance in the DOM would subscribe to entity changes independently.
+
+### 25.12 `streamEl` Must Be Cleared Between Turns
+`chat.streamEl` holds the current assistant message DOM element for streaming text. If not cleared between turns (in `handleIntentEnd` and continue-conversation transitions), streaming text appends to the previous turn's bubble.
+
+### 25.13 Cross-Repo Version Bumping
+The integration version appears in three places: `manifest.json` (`version`), `assist_satellite.py` (`sw_version` in `device_info`), and `DESIGN.md` header. All three must be updated together. The card version is in `package.json` only (injected at build time via Webpack `DefinePlugin`).
+
+---
+
+## 26. Implementation Checklist
 
 When recreating or modifying this card, verify:
 
