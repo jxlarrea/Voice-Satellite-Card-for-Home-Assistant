@@ -40,7 +40,6 @@ export class AnnouncementManager {
   }
 
   _onComplete(ann) {
-    this.playing = false;
     this.currentAudio = null;
     this._log.log(LOG, `Announcement #${ann.id} playback complete`);
 
@@ -58,6 +57,8 @@ export class AnnouncementManager {
         this._card.tts.playChime('done');
       }
       clearNotificationUI(this);
+      this.playing = false;
+      this.playQueued();
     }, clearDelay);
   }
 }

@@ -54,6 +54,7 @@ export class AskQuestionManager {
     }
 
     this._card.ui.hideBlurOverlay(BlurReason.ANNOUNCEMENT);
+    this.playing = false;
   }
 
   playQueued() {
@@ -70,7 +71,6 @@ export class AskQuestionManager {
   }
 
   _onComplete(ann) {
-    this.playing = false;
     this.currentAudio = null;
     this._log.log(LOG, `Question #${ann.id} playback complete`);
 
@@ -163,7 +163,12 @@ export class AskQuestionManager {
       clearNotificationUI(this);
       this._card.chat.clear();
       this._card.ui.hideBlurOverlay(BlurReason.PIPELINE);
-      pipeline.restart(0);
+      this.playing = false;
+      if (!this.queued) {
+        pipeline.restart(0);
+      } else {
+        this.playQueued();
+      }
     };
 
     // Safety timeout — if sendAnswer takes too long, clean up anyway

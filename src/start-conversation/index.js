@@ -41,7 +41,6 @@ export class StartConversationManager {
   }
 
   _onComplete(ann) {
-    this.playing = false;
     this.currentAudio = null;
     this._log.log(LOG, `Prompt #${ann.id} playback complete`);
 
@@ -49,6 +48,7 @@ export class StartConversationManager {
 
     // Clear announcement UI and enter listening mode
     clearNotificationUI(this);
+    this.playing = false;
     this._card.ui.showBlurOverlay(BlurReason.PIPELINE);
 
     const { pipeline } = this._card;

@@ -207,8 +207,12 @@ export class PipelineManager {
 
     this._log.log('pipeline', `Handler ID confirmed: ${this._binaryHandlerId} — starting audio`);
 
-    // Start sending audio now that handler ID is guaranteed to be set
+    // Start sending audio now that handler ID is guaranteed to be set.
+    // Discard stale audio first — the worklet keeps buffering while the
+    // pipeline is down and the buffer may contain chime residue that
+    // would trigger a false VAD detection on the server.
     const { audio } = this._card;
+    audio.audioBuffer = [];
     audio.startSending(() => this._binaryHandlerId);
 
     this._isStreaming = true;

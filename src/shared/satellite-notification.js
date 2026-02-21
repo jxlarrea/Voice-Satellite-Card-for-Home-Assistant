@@ -10,7 +10,7 @@
  * Each manager provides its own onComplete handler.
  */
 
-import { playMultiNoteChime, CHIME_ANNOUNCE } from '../audio/chime.js';
+import { CHIME_ANNOUNCE_URI } from '../audio/chime.js';
 import { buildMediaUrl, playMediaUrl } from '../audio/media-playback.js';
 import { BlurReason, Timing } from '../constants.js';
 
@@ -88,7 +88,10 @@ function _deliverToManager(mgr, ann, logPrefix) {
   if (ann.id <= _lastAnnounceId) return;
 
   if (mgr.playing) {
-    mgr.log.log(logPrefix, `Notification #${ann.id} ignored — already playing`);
+    if (!mgr.queued || mgr.queued.id !== ann.id) {
+      mgr.queued = ann;
+      mgr.log.log(logPrefix, `Notification #${ann.id} queued — still displaying`);
+    }
     return;
   }
 
@@ -141,6 +144,11 @@ export function dequeueNotification(mgr) {
  * @param {string} logPrefix
  */
 export function playNotification(mgr, ann, onComplete, logPrefix) {
+  // Cancel any pending UI clear from a previous notification
+  if (mgr.clearTimeoutId) {
+    clearNotificationUI(mgr);
+  }
+
   mgr.playing = true;
   mgr.currentAnnounceId = ann.id;
 
@@ -167,11 +175,12 @@ export function playNotification(mgr, ann, onComplete, logPrefix) {
         _playMain(mgr, ann, onComplete, logPrefix);
       });
     } else {
-      playMultiNoteChime(mgr.card, CHIME_ANNOUNCE, {
-        onDone: () => _playMain(mgr, ann, onComplete, logPrefix),
-        log: mgr.log,
+      const vol = mgr.card.config.chime_volume / 100;
+      playMediaUrl(CHIME_ANNOUNCE_URI, vol, {
+        onEnd: () => _playMain(mgr, ann, onComplete, logPrefix),
+        onError: () => _playMain(mgr, ann, onComplete, logPrefix),
+        onStart: () => mgr.log.log(logPrefix, 'Announcement chime playing'),
       });
-      mgr.log.log(logPrefix, 'Announcement chime played');
     }
   }
 }
