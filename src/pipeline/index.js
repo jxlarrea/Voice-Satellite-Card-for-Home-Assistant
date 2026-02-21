@@ -350,10 +350,11 @@ export class PipelineManager {
       return;
     }
     // A run-end during wake_word phase (before valid wake_word-end) without
-    // a preceding error is always from a stale/killed pipeline — suppress it
-    // to prevent finishRunEnd → restart(0) from killing the active pipeline.
+    // a preceding error means the server-side pipeline ended unexpectedly
+    // (e.g. after HA reconnect).  Restart instead of processing full cleanup.
     if (this._wakeWordPhase && !this._errorReceived) {
-      this._log.log('pipeline', 'Ignoring stale run-end (still in wake_word phase, no error)');
+      this._log.log('pipeline', 'run-end during wake_word phase — restarting pipeline');
+      this.restart(0);
       return;
     }
     handleRunEnd(this);

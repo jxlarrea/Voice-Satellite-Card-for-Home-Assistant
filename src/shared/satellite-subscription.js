@@ -16,6 +16,10 @@ let _subscribed = false;
 let _reconnectListener = null;
 let _card = null;
 let _onEvent = null;
+let _retryTimer = null;
+
+const RETRY_DELAYS = [2000, 4000, 8000, 16000, 30000];
+let _retryCount = 0;
 
 /**
  * Subscribe to satellite events via voice_satellite/subscribe_events.
@@ -59,14 +63,36 @@ function _doSubscribe(card, connection, onEvent) {
     },
   ).then((unsub) => {
     _unsubscribe = unsub;
+    _retryCount = 0;
     card.logger.log('satellite-sub', `Subscribed to satellite events for ${card.config.satellite_entity}`);
   }).catch((err) => {
     card.logger.error('satellite-sub', `Failed to subscribe: ${err}`);
     _subscribed = false;
+    _scheduleRetry(card, connection, onEvent);
   });
 }
 
+function _scheduleRetry(card, connection, onEvent) {
+  if (_retryTimer) return;
+  const delay = RETRY_DELAYS[Math.min(_retryCount, RETRY_DELAYS.length - 1)];
+  _retryCount++;
+  card.logger.log('satellite-sub', `Retrying in ${delay / 1000}s (attempt ${_retryCount})`);
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null;
+    if (_subscribed) return; // subscribed while waiting
+    const conn = card.connection;
+    if (!conn) return;
+    _subscribed = true;
+    _doSubscribe(card, conn, onEvent);
+  }, delay);
+}
+
 function _cleanup() {
+  if (_retryTimer) {
+    clearTimeout(_retryTimer);
+    _retryTimer = null;
+  }
+  _retryCount = 0;
   if (_unsubscribe) {
     try { _unsubscribe(); } catch (_) { /* cleanup */ }
     _unsubscribe = null;

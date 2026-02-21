@@ -462,8 +462,8 @@ When the mute switch is turned off, the next poll starts the pipeline normally.
 The bridged pipeline can receive events from a previous pipeline run that hasn't fully torn down on the server. The manager uses three flags to filter stale events:
 
 - `_runStartReceived` — Set to `true` on `run-start`. All events before the first `run-start` for a given subscription are ignored.
-- `_wakeWordPhase` — Set `true` on `wake_word-start`, `false` on valid `wake_word-end`. A `run-end` during wake word phase (without error) is stale.
-- `_errorReceived` — Set `true` on `error`. Allows `run-end` to proceed even during wake word phase if an error preceded it.
+- `_wakeWordPhase` — Set `true` on `wake_word-start`, `false` on valid `wake_word-end`. A `run-end` during wake word phase (without error) triggers an automatic pipeline restart (see §8.8).
+- `_errorReceived` — Set `true` on `error`. Allows `run-end` to proceed with normal cleanup during wake word phase if an error preceded it.
 
 **Gotcha — Empty wake_word-end:** When the pipeline is stopped/restarted, the server sends a `wake_word-end` with empty `wake_word_output`. This is not a real wake word detection — the manager ignores it to avoid entering a retry loop.
 
@@ -490,7 +490,7 @@ Events flow from `voice_satellite/run_pipeline` → `card.onPipelineMessage()` �
 | `intent-end` | `handleIntentEnd` | Show final response, handle continue_conversation, handle errors |
 | `tts-start` | (inline) | Set state TTS |
 | `tts-end` | `handleTtsEnd` | Play TTS audio (if not already streaming), restart pipeline |
-| `run-end` | `handleRunEnd` | Clean up: clear chat, hide blur, restart (or defer if TTS playing) |
+| `run-end` | `handleRunEnd` | During wake_word phase (no error): restart pipeline immediately (§8.8). Otherwise: clean up, restart (or defer if TTS playing) |
 | `error` | `handleError` | Expected errors: restart silently. Unexpected: error bar + backoff retry |
 
 ### 8.6 Wake Sound Switch
@@ -510,6 +510,14 @@ The done chime after TTS playback follows the same pattern.
 ### 8.7 Deferred Run-End
 
 When `run-end` arrives while TTS is playing, `pendingRunEnd = true`. The cleanup is deferred. When `onTTSComplete()` eventually fires, it handles the full cleanup. `finishRunEnd()` clears chat, hides blur, sets state to IDLE, then restarts pipeline (unless `serviceUnavailable` is true, in which case retry is already scheduled).
+
+### 8.8 Wake-Phase Run-End Restart
+
+When `run-end` arrives during the wake_word phase without a preceding error, the pipeline is restarted immediately via `restart(0)` instead of proceeding with normal cleanup.
+
+This handles a post-reboot race condition: after HA reconnects, the HA frontend WebSocket library auto-replays active subscriptions (including `run_pipeline`). The card's explicit reconnect handler also creates a new pipeline after a 2-second delay. The replayed pipeline starts first, but the card's restart kills it and creates a second pipeline. The server-side pipeline may genuinely end during wake_word detection (e.g., the audio stream ends due to reconnect timing), sending a valid `run-end`. Rather than ignoring this as "stale", the card restarts the pipeline to ensure continuous wake word listening.
+
+If the `run-end` during wake_word phase was preceded by an error (`_errorReceived` is true), normal cleanup and error handling proceed instead.
 
 ---
 
@@ -623,6 +631,7 @@ The subscription is:
 - **Owner-only** — Only the singleton owner subscribes
 - **Reconnect-aware** — Re-subscribes on the connection's `ready` event
 - **Refreshable** — `refreshSatelliteSubscription()` tears down and re-establishes (called on tab resume to recover from stale connections)
+- **Retry with backoff** — If subscription fails (e.g., integration entities not yet loaded after HA reboot), retries with exponential backoff: 2s, 4s, 8s, 16s, 30s (capped). Retry state is reset on successful subscription or full cleanup.
 
 ---
 
@@ -1010,6 +1019,7 @@ When recreating or modifying this card, verify:
 - [ ] Empty `wake_word-end` (no `wake_word_id`) is ignored (pipeline restart artifact)
 - [ ] `isRestarting` flag prevents concurrent restarts
 - [ ] Mute switch blocks pipeline start with 2s polling
+- [ ] `run-end` during wake_word phase (no error) triggers `restart(0)` (not ignored as stale)
 
 **TTS:**
 - [ ] `handleTtsEnd()` calls `tts.play()` then `pipeline.restart(0)` for barge-in
@@ -1021,6 +1031,7 @@ When recreating or modifying this card, verify:
 **Notifications:**
 - [ ] All three managers use `satellite-notification.js` lifecycle
 - [ ] Events delivered via `voice_satellite/subscribe_events` (not entity attributes)
+- [ ] Satellite subscription retries with exponential backoff on failure (2s, 4s, 8s, 16s, 30s)
 - [ ] Pipeline-busy queuing, played via `playQueued()` on TTS complete
 - [ ] Hidden-tab queuing with visibility replay
 - [ ] Passive announcements: centered (`announcement-mode`), `'announcement'` bubble type
