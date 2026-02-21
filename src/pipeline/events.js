@@ -6,6 +6,7 @@
 
 import { State, INTERACTING_STATES, EXPECTED_ERRORS, BlurReason, Timing } from '../constants.js';
 import { getSwitchState } from '../shared/satellite-state.js';
+import { CHIME_WAKE } from '../audio/chime.js';
 
 /**
  * Run-start: binaryHandlerId is already set from the init event.
@@ -93,9 +94,22 @@ export function handleWakeWordEnd(mgr, eventData) {
   mgr.card.setState(State.WAKE_WORD_DETECTED);
 
   // Check the integration's wake_sound switch (default: on)
-  const playChime = getSwitchState(mgr.card.hass, mgr.card.config.satellite_entity, 'wake_sound') !== false;
-  if (playChime) {
+  const wakeSound = getSwitchState(mgr.card.hass, mgr.card.config.satellite_entity, 'wake_sound') !== false;
+  if (wakeSound) {
+    // Stop sending audio during the chime — echo cancellation isn't
+    // perfect and the chime can leak into the mic, causing VAD to
+    // interpret it as speech and close STT prematurely.
+    const audio = mgr.card.audio;
+    audio.stopSending();
     tts.playChime('wake');
+    const resumeDelay = (CHIME_WAKE.duration * 1000) + 50;
+    setTimeout(() => {
+      // Discard audio captured during the chime, then resume sending.
+      audio.audioBuffer = [];
+      if (mgr.binaryHandlerId) {
+        audio.startSending(() => mgr.binaryHandlerId);
+      }
+    }, resumeDelay);
   }
   mgr.card.ui.showBlurOverlay(BlurReason.PIPELINE);
 }

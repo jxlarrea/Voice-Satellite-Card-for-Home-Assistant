@@ -1,6 +1,6 @@
 # Voice Satellite Card — Design Document
 
-Current version: 4.0.0
+Current version: 4.0.2
 
 ## 1. Overview
 
@@ -159,6 +159,7 @@ The codebase enforces strict separation of concerns:
 Only one card instance can own the microphone and pipeline at a time. This is critical because:
 - A user may place the card on multiple dashboard views
 - HA recreates the custom element when switching views
+- HACS integrations like **card-mod** intercept card loading and create duplicate element instances (one for internal use, one for the DOM)
 - Two active AudioContexts would conflict
 
 The singleton state lives on `window.__vsSingleton` (module scope falls back to window namespace so multiple script loads share state):
@@ -179,6 +180,8 @@ Key operations:
 - `propagateConfig(card)` — when a secondary card calls `setConfig()`, the config is forwarded to the active instance so live config changes take effect
 
 **Gotcha:** Before `claim()`, `isOwner()` returns true for all cards (since `instance` is null). The `isActive()` check gates subscriptions so they only fire after a card has successfully started.
+
+**Gotcha — card-mod duplicate instances:** Card-mod patches HA's `_loadElement` and creates two card instances. Instance #1 receives `setConfig` + `set hass` (and may start the pipeline) but never receives `connectedCallback`. Instance #2 is the DOM-attached element. The `VisibilityManager` ownership guard (`if (!this._card.isOwner) return`) prevents the non-owner instance's visibility handler from interfering with the active pipeline. Additionally, `visibility.setup()` is called from `startListening()` after `claim()` to guarantee the owner always has a visibility handler, even if `connectedCallback` never fired.
 
 ### 3.5 Logger (`logger.js`)
 
@@ -440,6 +443,8 @@ Before playing the wake chime, `handleWakeWordEnd` checks the integration's `wak
 
 The done chime after TTS playback follows the same pattern.
 
+**Chime audio muting:** When the wake chime is enabled, `handleWakeWordEnd` stops sending audio to the server before playing the chime, then resumes after the chime duration + 50ms margin. This prevents the chime sound from leaking into the microphone (echo cancellation isn't perfect on all devices) and being misinterpreted by VAD as speech — which would cause VAD to close STT prematurely, especially with short wake words like "Alexa". The buffer is flushed on resume to discard any chime-contaminated audio.
+
 **Gotcha — getSwitchState lookup:** The function uses `hass.entities` (HA frontend entity registry cache) to find sibling switch entities by `device_id` + `translation_key`. This is more reliable than reading `extra_state_attributes` on the satellite entity, which can be stale if the state_changed listener wasn't set up in time.
 
 ### 8.7 Deferred Run-End
@@ -596,7 +601,11 @@ Used for:
 
 ## 14. Visibility Management (`card/visibility.js`)
 
-Handles browser tab show/hide transitions:
+Handles browser tab show/hide transitions.
+
+**Ownership guard:** Only the singleton owner handles visibility events (`if (!this._card.isOwner) return`). Non-owner instances (e.g., card-mod duplicates) are silently ignored.
+
+**Idempotent setup:** `setup()` checks `this._handler` before registering to prevent double-registration. Called from both `connectedCallback` (for DOM-attached instances) and `startListening` after `claim()` (for the owner instance that may never receive `connectedCallback`).
 
 ### Tab Hidden
 1. Cancel any in-progress ask_question flow (prevents cleanup timers firing after resume)
@@ -606,11 +615,13 @@ Handles browser tab show/hide transitions:
 **Gotcha — No `pipeline.stop()` on hide:** Calling `stop()` creates a race condition where the server is still cancelling the old pipeline when `resume()` starts a new one, causing `async_accept_pipeline_from_satellite()` to silently fail. The `restart(0)` call in `_resume()` handles the properly sequenced stop→start.
 
 ### Tab Visible
-1. Resume AudioContext (browser suspends it in background)
-2. Clear `_isPaused` flag synchronously (no stale events can slip through the gap)
-3. Reset pipeline state via `resetForResume()`
+1. Cancel pending restart timeouts via `resetForResume()` BEFORE yielding to the event loop (prevents throttled background-tab `setTimeout` from racing with resume)
+2. Resume AudioContext (browser suspends it in background)
+3. Clear `_isPaused` flag synchronously (no stale events can slip through the gap)
 4. If a satellite event was queued while hidden: let the replayed event's flow manage the pipeline
 5. Otherwise: refresh satellite subscription and restart pipeline
+
+**Pipeline generation counter:** `stop()` increments `_pipelineGen`; `start()` captures the current gen and checks after each `await`. If a stale `start()` (from a throttled background-tab timeout) detects a gen mismatch, it aborts without clobbering the current subscription.
 
 ---
 
