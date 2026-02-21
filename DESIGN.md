@@ -584,7 +584,9 @@ All three managers use the same playback flow:
 After playback:
 1. ACK to integration (`announce_finished`)
 2. Restart pipeline (HA cancels the running pipeline when triggering announcements)
-3. After configurable delay (`announcement_display_duration`): play done chime, clear UI
+3. After configurable delay (`announcement_display_duration`): clear UI, then either play done chime or play queued notification
+
+**Queued notification priority:** If a notification is queued when the display timer fires, the done chime is skipped and the queued notification plays immediately (it has its own announce chime). Playing the done chime (Web Audio oscillator) concurrently with the announce chime (HTML Audio MP3) causes audio distortion in HA Companion App WebView.
 
 ### 10.4 StartConversationManager
 

@@ -52,13 +52,21 @@ export class AnnouncementManager {
 
     const clearDelay = (this._card.config.announcement_display_duration || 5) * 1000;
     this.clearTimeoutId = setTimeout(() => {
+      clearNotificationUI(this);
+      this.playing = false;
+
+      // Skip done chime when a queued notification is waiting — the next
+      // notification starts with its own announce chime and overlapping
+      // audio from Web Audio + HTML Audio causes distortion in WebView.
+      if (this.queued) {
+        this.playQueued();
+        return;
+      }
+
       const isRemote = this._card.config.tts_target && this._card.config.tts_target !== 'browser';
       if (getSwitchState(this._card.hass, this._card.config.satellite_entity, 'wake_sound') !== false && !isRemote) {
         this._card.tts.playChime('done');
       }
-      clearNotificationUI(this);
-      this.playing = false;
-      this.playQueued();
     }, clearDelay);
   }
 }
