@@ -13,9 +13,11 @@ body:
       label: Prerequisites checklist
       description: Please confirm you've checked all of these before opening an issue.
       options:
+        - label: I am running **Home Assistant 2025.2.1** or later.
+          required: true
         - label: I am accessing Home Assistant over **HTTPS** (or localhost). Microphone access requires a secure context.
           required: true
-        - label: My browser has **microphone permission** granted for my Home Assistant URL.
+        - label: I have granted **microphone permission** when prompted by the browser (a user gesture like tapping the mic button is required to trigger the permission prompt; in Fully Kiosk, enable **Web Content Settings → Enable Microphone Access** and **Autoplay Audio**)
           required: true
         - label: I have a **wake word service** (e.g., openWakeWord, microWakeWord) available to Home Assistant as an add-on or Wyoming integration.
           required: true
@@ -24,8 +26,6 @@ body:
         - label: My Assist pipeline has **Speech-to-Text** (e.g., Whisper) and **Text-to-Speech** (e.g., Piper) configured.
           required: true
         - label: I have tested the pipeline works independently (e.g., via the Assist dialog in the HA sidebar).
-          required: true
-        - label: I have read the [Troubleshooting section](https://github.com/jxlarrea/Voice-Satellite-Card-for-Home-Assistant#troubleshooting) in the README.
           required: true
 
   - type: textarea
