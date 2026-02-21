@@ -53,6 +53,12 @@ export class PipelineManager {
     this._runStartReceived = false;
     this._wakeWordPhase = false;
     this._errorReceived = false;
+
+    // Generation counter — incremented by stop() so that a stale start()
+    // (e.g. from a throttled background-tab timeout) can detect it was
+    // superseded and abort without clobbering the current subscription.
+    this._pipelineGen = 0;
+    this._cancelInit = null;
   }
 
   // --- Public accessors ---
@@ -90,6 +96,7 @@ export class PipelineManager {
   async start(options) {
     const opts = options || {};
     const { connection, config } = this._card;
+    const gen = this._pipelineGen;
 
     if (!connection) {
       throw new Error('No Home Assistant connection available');
@@ -152,12 +159,16 @@ export class PipelineManager {
     // but the init event arrives as a separate WS frame afterwards.
     let resolveInit;
     const initPromise = new Promise((resolve) => { resolveInit = resolve; });
+    this._cancelInit = resolveInit;
 
-    this._unsubscribe = await subscribePipelineRun(
+    const unsub = await subscribePipelineRun(
       connection,
       config.satellite_entity,
       runConfig,
       (message) => {
+        // Stale subscription — a newer stop()/start() cycle superseded us
+        if (this._pipelineGen !== gen) return;
+
         // Synthetic init event carries the WS binary handler ID
         if (message.type === 'init') {
           this._binaryHandlerId = message.handler_id;
@@ -170,10 +181,29 @@ export class PipelineManager {
       },
     );
 
+    // --- Gen check 1: stop() was called while we were subscribing ---
+    if (this._pipelineGen !== gen) {
+      this._log.log('pipeline', 'Aborting stale start() after subscribe — pipeline was stopped');
+      try { unsub(); } catch (_) { /* cleanup */ }
+      return;
+    }
+
+    this._unsubscribe = unsub;
     this._log.log('pipeline', 'Pipeline subscribed, waiting for init event...');
 
     // Block until the init event arrives with the binary handler ID
     await initPromise;
+    this._cancelInit = null;
+
+    // --- Gen check 2: stop() was called while we were waiting for init ---
+    if (this._pipelineGen !== gen) {
+      this._log.log('pipeline', 'Aborting stale start() after init — pipeline was stopped');
+      if (this._unsubscribe) {
+        try { this._unsubscribe(); } catch (_) { /* cleanup */ }
+        this._unsubscribe = null;
+      }
+      return;
+    }
 
     this._log.log('pipeline', `Handler ID confirmed: ${this._binaryHandlerId} — starting audio`);
 
@@ -188,6 +218,17 @@ export class PipelineManager {
   }
 
   async stop() {
+    // Increment generation first — any in-flight start() will see the
+    // mismatch after its next await and abort cleanly.
+    this._pipelineGen++;
+    this._log.log('pipeline', `stop() — gen=${this._pipelineGen}`);
+
+    // Unblock a start() that is stuck at `await initPromise`
+    if (this._cancelInit) {
+      this._cancelInit();
+      this._cancelInit = null;
+    }
+
     this._card.audio.stopSending();
     this._binaryHandlerId = null;
     this._isStreaming = false;

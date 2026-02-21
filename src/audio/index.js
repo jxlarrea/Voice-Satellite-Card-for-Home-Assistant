@@ -107,8 +107,14 @@ export class AudioManager {
    */
   startSending(binaryHandlerIdGetter) {
     this.stopSending();
+    let firstSendLogged = false;
     this._sendInterval = setInterval(() => {
-      sendAudioBuffer(this, binaryHandlerIdGetter());
+      const handlerId = binaryHandlerIdGetter();
+      if (!firstSendLogged && this._audioBuffer.length > 0) {
+        firstSendLogged = true;
+        this._log.log('mic', `First audio send — handlerId=${handlerId} bufferChunks=${this._audioBuffer.length}`);
+      }
+      sendAudioBuffer(this, handlerId);
     }, 100);
   }
 

@@ -63,6 +63,11 @@ export async function startListening(card) {
     singleton.claim(card);
     card.ui.hideStartButton();
 
+    // Ensure visibility handler is on the owner — connectedCallback may
+    // not have fired for this instance (e.g. card-mod creates an extra
+    // element that gets config+hass but is never attached to the DOM).
+    card.visibility.setup();
+
     // Subscribe notification managers now that we're the active owner
     card.timer.update();
     subscribeSatelliteEvents(card, (event) => dispatchSatelliteEvent(card, event));

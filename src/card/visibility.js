@@ -24,6 +24,7 @@ export class VisibilityManager {
   }
 
   setup() {
+    if (this._handler) return; // already registered
     this._handler = () => this._handleChange();
     document.addEventListener('visibilitychange', this._handler);
   }
@@ -34,6 +35,10 @@ export class VisibilityManager {
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
     }
+
+    // Only the singleton owner should manage visibility — non-owner instances
+    // have no mic or pipeline and must not interfere with the active owner.
+    if (!this._card.isOwner) return;
 
     if (document.hidden) {
       this._isPaused = true;
@@ -76,7 +81,17 @@ export class VisibilityManager {
   async _resume() {
     if (!this._isPaused) return;
 
-    // Resume AudioContext first — browser suspends it in background tabs,
+    const { pipeline, audio } = this._card;
+
+    // Cancel any pending restart timeout BEFORE yielding to the event loop.
+    // Browsers throttle setTimeout in background tabs (≥1s in Chrome).
+    // When the tab becomes visible, the throttled timeout can fire during
+    // our await below, starting a concurrent pipeline.start() that races
+    // with our own restart(0) — two subscriptions clobber each other's
+    // binaryHandlerId, sending audio to a dead handler.
+    pipeline.resetForResume();
+
+    // Resume AudioContext — browser suspends it in background tabs,
     // and the worklet/processor can't produce audio until it's running.
     // Keep _isPaused = true during this await so stale pipeline events
     // from the still-active subscription are blocked by handlePipelineMessage.
@@ -86,9 +101,6 @@ export class VisibilityManager {
     // here to restart(0) / hasPendingSatelliteEvent has no awaits, so no
     // stale events can slip through the gap.
     this._isPaused = false;
-
-    const { pipeline } = this._card;
-    pipeline.resetForResume();
 
     // If a satellite event (announcement/ask_question/start_conversation) was
     // queued while the tab was hidden, skip the wake-word pipeline restart.
