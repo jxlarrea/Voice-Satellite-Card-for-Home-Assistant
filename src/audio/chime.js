@@ -85,7 +85,7 @@ export function playChime(card, pattern, log) {
     osc.connect(gain);
     gain.connect(ctx.destination);
 
-    const volume = (card.config.chime_volume / 100) * 0.5;
+    const volume = card.mediaPlayer.volume * 0.5;
     const vol = volume * (pattern.volumeScale || 1);
 
     osc.type = pattern.wave;
@@ -121,7 +121,7 @@ export function playMultiNoteChime(card, pattern, options = {}) {
 
   try {
     const { ctx, owned } = getOrCreateContext(card);
-    const volume = (card.config.chime_volume / 100) * 0.25;
+    const volume = card.mediaPlayer.volume * 0.25;
 
     for (const note of pattern.notes) {
       const osc = ctx.createOscillator();

@@ -18,6 +18,7 @@ import { TimerManager } from '../timer';
 import { AnnouncementManager } from '../announcement';
 import { AskQuestionManager } from '../ask-question';
 import { StartConversationManager } from '../start-conversation';
+import { MediaPlayerManager } from '../media-player';
 import { getConfigForm } from '../editor';
 import { isEditorPreview, renderPreview } from '../editor/preview.js';
 import * as singleton from '../shared/singleton.js';
@@ -54,6 +55,7 @@ export class VoiceSatelliteCard extends HTMLElement {
     this._announcement = new AnnouncementManager(this);
     this._askQuestion = new AskQuestionManager(this);
     this._startConversation = new StartConversationManager(this);
+    this._mediaPlayer = new MediaPlayerManager(this);
   }
 
   // --- Public accessors ---
@@ -71,6 +73,7 @@ export class VoiceSatelliteCard extends HTMLElement {
   get announcement() { return this._announcement; }
   get askQuestion() { return this._askQuestion; }
   get startConversation() { return this._startConversation; }
+  get mediaPlayer() { return this._mediaPlayer; }
   get currentState() { return this._state; }
   set currentState(val) { this._state = val; }
   get lastSyncedSatelliteState() { return this._lastSyncedSatelliteState; }

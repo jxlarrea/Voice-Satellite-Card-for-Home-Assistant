@@ -85,3 +85,17 @@ export function refreshSatelliteSubscription() {
   subscribeSatelliteEvents(_card, _onEvent);
 }
 
+/**
+ * Permanently tear down the satellite subscription and reconnect listener.
+ * Called when the card is displaced by another browser.
+ */
+export function teardownSatelliteSubscription() {
+  _cleanup();
+  if (_reconnectListener && _card?.connection) {
+    _card.connection.removeEventListener('ready', _reconnectListener);
+    _reconnectListener = null;
+  }
+  _card = null;
+  _onEvent = null;
+}
+

@@ -10,7 +10,7 @@
 import { State, INTERACTING_STATES, BlurReason } from '../constants.js';
 import { syncSatelliteState } from './comms.js';
 import * as singleton from '../shared/singleton.js';
-import { subscribeSatelliteEvents } from '../shared/satellite-subscription.js';
+import { subscribeSatelliteEvents, teardownSatelliteSubscription } from '../shared/satellite-subscription.js';
 import { dispatchSatelliteEvent } from '../shared/satellite-notification.js';
 import { getSwitchState } from '../shared/satellite-state.js';
 
@@ -185,5 +185,19 @@ export function handlePipelineMessage(card, message) {
     case 'tts-end': card.pipeline.handleTtsEnd(eventData); break;
     case 'run-end': card.pipeline.handleRunEnd(); break;
     case 'error': card.pipeline.handleError(eventData); break;
+    case 'displaced':
+      card.logger.error('pipeline', 'Pipeline displaced — another browser is using this satellite entity');
+      card.pipeline.stop();
+      card.audio.stopMicrophone();
+      card.tts.stop();
+      card.timer.destroy();
+      teardownSatelliteSubscription();
+      card.chat.clear();
+      card.ui.hideBlurOverlay(BlurReason.PIPELINE);
+      card.ui.hideBlurOverlay(BlurReason.ANNOUNCEMENT);
+      singleton.release();
+      card.currentState = State.IDLE;
+      card.ui.showStartButton();
+      break;
   }
 }

@@ -62,8 +62,6 @@ export const DEFAULT_CONFIG = {
   // Behavior
   start_listening_on_load: true,
   satellite_entity: '',
-  chime_volume: 100,
-  tts_volume: 100,
   tts_target: '',
   double_tap_cancel: true,
   debug: false,

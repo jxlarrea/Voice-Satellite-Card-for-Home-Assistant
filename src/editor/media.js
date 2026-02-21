@@ -4,16 +4,9 @@
 
 export const mediaSchema = [
   {
-    type: 'expandable', name: '', title: 'Volume & Chimes', flatten: true,
+    type: 'expandable', name: '', title: 'TTS Output', flatten: true,
     schema: [
       { name: 'tts_target', selector: { entity: { filter: { domain: 'media_player' } } } },
-      {
-        type: 'grid', name: '', flatten: true,
-        schema: [
-          { name: 'chime_volume', selector: { number: { min: 0, max: 100, step: 1, unit_of_measurement: '%', mode: 'slider' } } },
-          { name: 'tts_volume', selector: { number: { min: 0, max: 100, step: 1, unit_of_measurement: '%', mode: 'slider' } } },
-        ],
-      },
     ],
   },
 
@@ -28,8 +21,6 @@ export const mediaSchema = [
 
 export const mediaLabels = {
   tts_target: 'TTS output device',
-  chime_volume: 'Chime volume',
-  tts_volume: 'TTS volume',
   announcement_display_duration: 'Announcement display duration',
 };
 

@@ -46,6 +46,13 @@ export function claim(card) {
   state.active = true;
 }
 
+/** Release ownership — called when the card is displaced or torn down */
+export function release() {
+  state.instance = null;
+  state.active = false;
+  state.starting = false;
+}
+
 /**
  * Propagate config to the active instance (when a secondary card updates config).
  * @param {object} card - The card pushing the config change

@@ -21,6 +21,7 @@ Home Assistant's built-in voice features require dedicated hardware like ESPHome
 - **Using your browser's microphone** - No additional hardware needed.
 - **Supporting wake words** - Say "OK Nabu" or your custom wake word to activate.
 - **Playing TTS responses** - Hear responses directly from your device or a remote media player.
+- **Media player entity** - Each satellite exposes a media player in HA for volume control, `tts.speak` targeting, and `media_player.play_media` from automations.
 - **Providing voice-activated timers** - Set, update, and cancel timers with on-screen countdown pills.
 - **Receiving announcements** - Push TTS messages to specific devices from automations.
 - **Supporting interactive conversations** - Automations can proactively ask questions and listen for responses.
@@ -45,20 +46,6 @@ For kiosk setups like [Fully Kiosk Browser](https://play.google.com/store/apps/d
 
 For the **Home Assistant Companion App**, enable **Autoplay videos** in Settings → Companion App → Other settings. Without this, the WebView will block TTS audio playback.
 
-## How It Works
-
-```mermaid
-graph TD
-    A[🎤 Browser Mic] -->|16kHz PCM| B[Voice Satellite Card Integration]
-    B -->|Bridged Pipeline| C[Home Assistant Assist Pipeline]
-    C --> D[Wake Word Detection]
-    D --> E[Speech-to-Text]
-    E --> F[Conversation Agent]
-    F --> G[Text-to-Speech]
-    G -->|Audio URL| H[🔊 TTS Playback]
-    H -->|Restart| D
-```
-
 ## Features
 
 - **Wake Word Detection** - Uses Home Assistant's configured wake word detection (like Wyoming openWakeWord or microWakeWord) for server-side processing.
@@ -75,6 +62,7 @@ graph TD
 - **Wake Sound Switch** - Enable/disable chime sounds from the Home Assistant UI.
 - **Screensaver Control** - Automatically dismisses a configured screensaver entity when a voice interaction begins.
 - **Pipeline & VAD Selection** - Choose which Assist pipeline and VAD sensitivity to use per satellite from the Home Assistant device page.
+- **Media Player Entity** - Each satellite exposes a `media_player` entity. Volume is controlled via the entity's volume slider in HA and applies to all audio (chimes, TTS, announcements). Supports `tts.speak` and `media_player.play_media` targeting from automations.
 - **Configurable Chimes** - Audio feedback for wake word detection and request completion.
 
 ## Prerequisites
@@ -144,8 +132,6 @@ type: custom:voice-satellite-card
 # Behavior
 satellite_entity: ''               # (Required) assist_satellite entity from the integration
 tts_target: ''                     # TTS output device (empty = browser, or media_player entity ID)
-chime_volume: 100                  # Chime volume (0-100)
-tts_volume: 100                    # TTS playback volume (0-100)
 debug: false                       # Show debug info in browser console
 
 # Announcements
@@ -215,19 +201,12 @@ The card will automatically request microphone access and begin listening when l
 
 The gradient bar indicates the current pipeline state:
 
-```mermaid
-stateDiagram-v2
-    direction LR
-    Listening --> WakeWord : Wake word detected
-    WakeWord --> Processing : Speech captured
-    Processing --> Speaking : Response ready
-    Speaking --> Listening : Restart
-
-    note right of Listening : Bar hidden
-    note right of WakeWord : Bar visible, slow flow
-    note right of Processing : Bar visible, fast flow
-    note right of Speaking : Bar visible, medium flow
-```
+| State | Gradient Bar |
+|-------|-------------|
+| **Listening** | Hidden |
+| **Wake Word Detected** | Visible, slow flow |
+| **Processing** | Visible, fast flow |
+| **Speaking** | Visible, medium flow |
 
 ### Timers
 
@@ -270,6 +249,33 @@ data:
 ```
 
 After the announcement plays, the card automatically enters listening mode (skipping wake word detection) so the user can respond immediately. The response is processed through the configured conversation agent as a normal voice interaction.
+
+### Media Player
+
+Each satellite automatically exposes a `media_player` entity in Home Assistant. This entity:
+
+- **Controls volume** for all satellite audio (chimes, TTS, announcements) via the HA volume slider
+- **Reflects playback state** — shows "Playing" whenever any sound is active on the satellite, matching Voice PE behavior
+- **Supports `tts.speak`** — target the satellite as a TTS device in automations
+- **Supports `media_player.play_media`** — play arbitrary audio files on the satellite
+
+```yaml
+# Play audio on the satellite
+action: media_player.play_media
+target:
+  entity_id: media_player.kitchen_tablet_media_player
+data:
+  media_content_id: media-source://media_source/local/doorbell.mp3
+  media_content_type: music
+
+# Use the satellite as a TTS target
+action: tts.speak
+target:
+  entity_id: tts.piper
+data:
+  media_player_entity_id: media_player.kitchen_tablet_media_player
+  message: "The laundry is done!"
+```
 
 ### Ask Question
 

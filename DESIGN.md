@@ -1,7 +1,5 @@
 # Voice Satellite Card — Design Document
 
-Current version: 4.0.4
-
 ## 1. Overview
 
 Voice Satellite Card is a custom Home Assistant Lovelace card that turns any browser into a full-featured voice satellite with feature parity with physical devices like the Home Assistant Voice Preview Edition. It captures microphone audio, routes it through the **required** [Voice Satellite Card Integration](https://github.com/jxlarrea/voice-satellite-card-integration) to Home Assistant's Assist pipeline, and plays back TTS responses — all without leaving the HA dashboard.
@@ -13,28 +11,6 @@ The source is organized as ES6 modules in `src/`, bundled via Webpack + Babel in
 ---
 
 ## 2. High-Level Flow
-
-```mermaid
-graph TD
-    A[Browser Microphone] --> B[Audio Processing]
-    B -->|Binary WebSocket| C[Integration: voice_satellite/run_pipeline]
-    C --> D[HA Assist Pipeline]
-    D --> E[Pipeline Events relayed to card]
-    E --> F[Visual Feedback]
-    E --> G[TTS Playback]
-    G -->|Restart| C
-
-    H[Integration Entity] -->|subscribe_events WS| I[Satellite Subscription]
-    I --> J[AnnouncementManager]
-    I --> K[AskQuestionManager]
-    I --> L[StartConversationManager]
-
-    H -->|state_changed events| M[TimerManager]
-
-    J -->|announce_finished WS| H
-    K -->|question_answered WS| H
-    F -->|update_state WS| H
-```
 
 1. The card acquires the browser microphone via `getUserMedia`.
 2. Audio is captured via AudioWorklet (or ScriptProcessor fallback), resampled to 16 kHz mono PCM, and sent as binary WebSocket frames every 100 ms.
@@ -48,11 +24,12 @@ graph TD
 | Channel | Direction | Purpose |
 |---------|-----------|---------|
 | `voice_satellite/run_pipeline` | Card → Integration → Card | Bridged pipeline: card sends audio, receives pipeline events |
-| `voice_satellite/subscribe_events` | Integration → Card | Push notifications: announcements, start_conversation, ask_question |
+| `voice_satellite/subscribe_events` | Integration → Card | Push notifications: announcements, start_conversation, ask_question. Also drives entity availability — the integration marks the entity as unavailable when no subscriber is connected. |
 | `voice_satellite/update_state` | Card → Integration | Sync card's pipeline state to the entity (idle/listening/processing/responding) |
 | `voice_satellite/announce_finished` | Card → Integration | ACK that announcement playback completed (unblocks integration's `async_announce`) |
 | `voice_satellite/question_answered` | Card → Integration | Submit STT transcription for hassil matching |
 | `voice_satellite/cancel_timer` | Card → Integration | Cancel a specific timer by ID |
+| `voice_satellite/media_player_event` | Card → Integration | Report media player playback state, volume, current media |
 | `state_changed` (HA event bus) | Integration → Card | Timer state changes (active_timers attribute) |
 
 ---
@@ -109,6 +86,9 @@ voice-satellite-card/
 │   │   ├── index.js                      ← AskQuestionManager (prompt → STT → answer → feedback)
 │   │   └── comms.js                      ← question_answered WS command
 │   │
+│   ├── media-player/                     ← Media player entity bridge
+│   │   └── index.js                      ← MediaPlayerManager (playback, volume, state sync)
+│   │
 │   ├── start-conversation/               ← Start conversation (prompt → STT listening mode)
 │   │   └── index.js                      ← StartConversationManager (prompt → restartContinue)
 │   │
@@ -125,7 +105,7 @@ voice-satellite-card/
 │   └── editor/                           ← Config editor + preview
 │       ├── index.js                      ← getConfigForm() schema assembler
 │       ├── behavior.js                   ← satellite_entity, debug, mic processing
-│       ├── media.js                      ← TTS target, volumes, announcement duration
+│       ├── media.js                      ← TTS target, announcement duration
 │       ├── timer.js                      ← Timer pill styling (11 fields)
 │       ├── bar.js                        ← Activity bar (position, height, gradient, blur)
 │       ├── bubbles.js                    ← Bubble style, transcription/response sections
@@ -226,12 +206,13 @@ A styled console log shows the card version on load (`__VERSION__` is injected a
 
 ## 5. Card Orchestrator (`card/index.js`)
 
-`VoiceSatelliteCard` extends `HTMLElement` and composes 11 managers:
+`VoiceSatelliteCard` extends `HTMLElement` and composes 12 managers:
 
 | Manager | Purpose |
 |---------|---------|
 | `AudioManager` | Microphone, AudioWorklet, send interval |
 | `TtsManager` | TTS playback (browser + remote), chime facade |
+| `MediaPlayerManager` | Media player entity bridge (volume, playback, state sync) |
 | `PipelineManager` | Pipeline lifecycle (start/stop/restart/retry/mute) |
 | `UIManager` | All DOM manipulation |
 | `ChatManager` | Chat bubble state, streaming text fade |
@@ -327,7 +308,7 @@ Five predefined chime patterns synthesized via Web Audio API oscillators:
 
 Single-note chimes (`playChime`) use one oscillator with frequency steps. Multi-note chimes (`playMultiNoteChime`) create separate oscillators per note with individual envelopes.
 
-Volume scaled to max 0.5: `(config.chime_volume / 100) * 0.5`. Error chime additionally reduced to 30%.
+Volume sourced from `card.mediaPlayer.volume` (perceptual curve applied), scaled to max 0.5 for single-note chimes and 0.25 for multi-note chimes. Error chime additionally reduced to 30%.
 
 ### 6.4 Media Playback
 
@@ -343,7 +324,7 @@ Volume scaled to max 0.5: `(config.chime_volume / 100) * 0.5`. Error chime addit
 
 Handles two playback targets:
 
-**Browser playback** — Creates an HTML Audio element via `playMediaUrl()`. Includes a 30-second watchdog timer that forces completion if the `onended` event never fires (workaround for HA Companion App WebView quirks).
+**Browser playback** — Creates an HTML Audio element via `playMediaUrl()`. Includes a stall-detection watchdog (`setInterval`) that monitors `audio.currentTime` progression. If the audio stops advancing between intervals, playback is force-completed (workaround for HA Companion App WebView quirks). Unlike a fixed timeout, this supports TTS responses of any length.
 
 **Remote playback** — Calls `media_player.play_media` on the configured `tts_target` entity. Uses a 2-second delay before reporting completion (estimation, since there's no feedback from the media player).
 
@@ -358,6 +339,80 @@ If the pipeline's `run-start` event includes `tts_output.stream_response: true`,
 ### 7.4 TTS Stop Safety
 
 When stopping TTS playback (`tts.stop()`), `onended` and `onerror` handlers are nulled BEFORE calling `pause()`. Otherwise the pause triggers `onended`, which calls `_onComplete()`, which can trigger continue-conversation or cleanup incorrectly (ghost events).
+
+---
+
+## 7A. Media Player (`media-player/`)
+
+### 7A.1 MediaPlayerManager
+
+Bridges the integration's `media_player` entity to the browser. The integration pushes media commands via the satellite event subscription; the card plays audio and reports state back via a dedicated WS command.
+
+**Commands received** (via `dispatchSatelliteEvent` → `handleCommand`):
+
+| Command | Action |
+|---------|--------|
+| `play` | Stop current playback, sign relative URLs via `auth/sign_path`, play via `playMediaUrl()` |
+| `pause` | Pause HTML Audio element |
+| `resume` | Resume paused audio |
+| `stop` | Stop and clean up audio |
+| `volume_set` | Update volume, apply to all active audio (own + TTS + notification) |
+| `volume_mute` | Mute/unmute, apply to all active audio |
+
+**State reporting** — `_reportState(state)` sends playback state back to the integration via `voice_satellite/media_player_event`:
+
+```json
+{
+  "type": "voice_satellite/media_player_event",
+  "entity_id": "media_player.kitchen_tablet_media_player",
+  "state": "playing",
+  "volume": 0.75,
+  "media_id": "/api/tts_proxy/abc123.mp3"
+}
+```
+
+### 7A.2 Unified Audio State Tracking
+
+The media player entity reflects ALL audio output from the satellite, not just direct `play_media` calls. This matches Voice PE behavior where the media player shows "Playing" during chimes, TTS, and announcements.
+
+**Mechanism:** `_activeSources` (a `Set`) tracks active audio sources by name (`'tts'`, `'chime'`, `'notification'`, `'announce-chime'`). Callers use:
+
+- `notifyAudioStart(source)` — Adds source, reports "playing"
+- `notifyAudioEnd(source)` — Removes source. When no sources remain (and no own playback is active), reports "idle" after a 200ms debounce
+
+The debounce prevents flickering during rapid audio transitions (e.g., chime → TTS gap).
+
+**Integration points:**
+- TTS: `onStart` → `notifyAudioStart('tts')`, `stop()`/`_onComplete()` → `notifyAudioEnd('tts')`
+- Chimes: `playChime()` → `notifyAudioStart('chime')`, setTimeout → `notifyAudioEnd('chime')`
+- Notifications: playback `onStart` → `notifyAudioStart('notification')`, `onEnd`/`onError` → `notifyAudioEnd('notification')`
+- Announce chime: `onStart` → `notifyAudioStart('announce-chime')`, `onEnd`/`onError` → `notifyAudioEnd('announce-chime')`
+
+### 7A.3 Unified Volume
+
+All audio uses `card.mediaPlayer.volume` instead of per-feature config sliders. The `volume` getter applies a perceptual quadratic curve (`volume²`) so the HA slider feels linear to human ears.
+
+**Initial sync:** On first access after page load, `_syncInitialVolume()` reads `hass.states[entityId].attributes.volume_level` and `is_volume_muted` from the HA entity state. This is gated by a `_volumeSynced` flag so it runs exactly once.
+
+**Real-time updates:** When `volume_set` or `volume_mute` commands arrive, `_applyVolumeToExternalAudio()` reaches into active TTS and notification `Audio` elements to update their volume immediately:
+
+```javascript
+_applyVolumeToExternalAudio(vol) {
+  const ttsAudio = this._card.tts?._currentAudio;
+  if (ttsAudio) ttsAudio.volume = vol;
+  for (const mgr of [this._card.announcement, this._card.askQuestion, this._card.startConversation]) {
+    if (mgr?.currentAudio) mgr.currentAudio.volume = vol;
+  }
+}
+```
+
+### 7A.4 Entity Lookup
+
+`_getEntityId()` finds the `media_player.*` entity on the same device as the satellite entity. Uses the same `hass.entities` device lookup pattern as `getSwitchState()` — searches for a `media_player.*` entity with matching `device_id` and `platform === 'voice_satellite'`.
+
+### 7A.5 Barge-In
+
+`interrupt()` stops any active media player playback when the wake word is detected or a notification starts playing. Only affects own playback (play/pause/resume commands) — external audio sources (TTS, chimes) manage their own lifecycle.
 
 ---
 
@@ -495,7 +550,8 @@ Three notification features share a common lifecycle defined in `shared/satellit
 ### 10.1 Event Flow
 
 1. **Integration pushes event** via `voice_satellite/subscribe_events` subscription
-2. **`dispatchSatelliteEvent()`** routes to the correct manager based on flags:
+2. **`dispatchSatelliteEvent()`** routes to the correct manager based on type/flags:
+   - `type === "media_player"` → MediaPlayerManager (early return, no `id` field required)
    - `ask_question: true` → AskQuestionManager
    - `start_conversation: true` or `type === "start_conversation"` → StartConversationManager
    - Otherwise → AnnouncementManager
@@ -736,8 +792,6 @@ State changes are synced to the integration entity via `voice_satellite/update_s
 | `start_listening_on_load` | bool | `true` | Auto-start pipeline on page load (internal, not in editor) |
 | `double_tap_cancel` | bool | `true` | Enable double-tap to cancel (internal, not in editor) |
 | `debug` | bool | `false` | Enable debug logging to browser console |
-| `chime_volume` | number | `100` | Chime volume (0–100) |
-| `tts_volume` | number | `100` | TTS playback volume (0–100) |
 | `tts_target` | string | `''` | Remote media_player entity for TTS (empty = browser playback) |
 | **Microphone Processing** ||||
 | `noise_suppression` | bool | `true` | WebRTC noise suppression |
@@ -796,7 +850,7 @@ The editor uses HA's `ha-form` schema system. Each section is defined in its own
 | File | Section |
 |------|---------|
 | `behavior.js` | Satellite entity selector (required), debug toggle, mic processing expandable |
-| `media.js` | TTS target, volumes, announcement duration |
+| `media.js` | TTS target, announcement duration |
 | `timer.js` | Timer pill expandable (11 style fields) |
 | `bar.js` | Activity bar expandable (position, height, gradient, blur) |
 | `bubbles.js` | Bubble style, container width, transcription expandable, response expandable |
@@ -869,7 +923,7 @@ All timing values are centralized in `constants.js`:
 | `DOUBLE_TAP_THRESHOLD` | 400ms | Max interval between taps for double-tap |
 | `TIMER_CHIME_INTERVAL` | 3000ms | Interval between alert chime loops |
 | `PILL_EXPIRE_ANIMATION` | 400ms | Timer pill fade-out animation duration |
-| `PLAYBACK_WATCHDOG` | 30000ms | Force-complete TTS if `onended` never fires |
+| `PLAYBACK_WATCHDOG` | 30000ms | Interval for stall-detection watchdog (checks `audio.currentTime` progression) |
 | `RECONNECT_DELAY` | 2000ms | Delay before restarting pipeline after reconnect |
 | `INTENT_ERROR_DISPLAY` | 3000ms | How long to show error bar for intent errors |
 | `NO_MEDIA_DISPLAY` | 3000ms | Delay before completing text-only announcements |
@@ -960,7 +1014,7 @@ When recreating or modifying this card, verify:
 **TTS:**
 - [ ] `handleTtsEnd()` calls `tts.play()` then `pipeline.restart(0)` for barge-in
 - [ ] `stop()` nulls `onended`/`onerror` before pausing (ghost event prevention)
-- [ ] Watchdog (30s) forces completion if no audio events
+- [ ] Stall-detection watchdog (`setInterval`) checks `audio.currentTime` progression, force-completes on stall
 - [ ] Done chime controlled by `wake_sound` switch, suppressed for remote TTS
 - [ ] Streaming TTS: no restart at `tts_start_streaming`, skip duplicate at `tts-end`
 
@@ -984,6 +1038,20 @@ When recreating or modifying this card, verify:
 - [ ] Blur uses reference counting with `BlurReason` strings
 - [ ] `chat.streamEl` cleared between conversation turns
 
+**Media Player:**
+- [ ] `MediaPlayerManager` receives commands via `dispatchSatelliteEvent` → `handleCommand`
+- [ ] Plays audio via `playMediaUrl()`, signs relative URLs via `auth/sign_path`
+- [ ] Reports state via `voice_satellite/media_player_event` WS command
+- [ ] Unified audio tracking: `_activeSources` Set with `notifyAudioStart`/`notifyAudioEnd`
+- [ ] 200ms debounced idle reporting to prevent flickering
+- [ ] All audio sources (TTS, chimes, notifications) notify start/end
+- [ ] Volume from media player entity with perceptual curve (`volume²`)
+- [ ] Initial volume sync from entity state on first access (`_syncInitialVolume`)
+- [ ] `_syncInitialVolume()` called at start of `_reportState` to prevent stale volume overwriting entity
+- [ ] Real-time volume propagation to active TTS/notification Audio elements
+- [ ] `interrupt()` called on wake word detection and notification start
+- [ ] Entity lookup via `hass.entities` device_id matching (same pattern as `getSwitchState`)
+
 **Version:**
 - [ ] Card version in `package.json` only (injected via DefinePlugin)
-- [ ] Integration version in 3 places: `manifest.json`, `assist_satellite.py` (sw_version), `DESIGN.md` header
+- [ ] Integration version in 2 places: `manifest.json`, `assist_satellite.py` (`sw_version`)

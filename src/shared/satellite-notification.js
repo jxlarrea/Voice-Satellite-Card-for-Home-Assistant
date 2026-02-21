@@ -55,6 +55,13 @@ function _onVisibilityChange() {
  */
 export function dispatchSatelliteEvent(card, event) {
   const { type, data } = event;
+
+  // media_player events don't have an id field — route early
+  if (type === 'media_player') {
+    card.mediaPlayer.handleCommand(data);
+    return;
+  }
+
   if (!data || !data.id) return;
 
   // Queue events while the tab is hidden — audio can't play and UI state
@@ -149,6 +156,9 @@ export function playNotification(mgr, ann, onComplete, logPrefix) {
     clearNotificationUI(mgr);
   }
 
+  // Interrupt media player if it's playing
+  mgr.card.mediaPlayer.interrupt();
+
   mgr.playing = true;
   mgr.currentAnnounceId = ann.id;
 
@@ -175,11 +185,20 @@ export function playNotification(mgr, ann, onComplete, logPrefix) {
         _playMain(mgr, ann, onComplete, logPrefix);
       });
     } else {
-      const vol = mgr.card.config.chime_volume / 100;
+      const vol = mgr.card.mediaPlayer.volume;
       playMediaUrl(CHIME_ANNOUNCE_URI, vol, {
-        onEnd: () => _playMain(mgr, ann, onComplete, logPrefix),
-        onError: () => _playMain(mgr, ann, onComplete, logPrefix),
-        onStart: () => mgr.log.log(logPrefix, 'Announcement chime playing'),
+        onEnd: () => {
+          mgr.card.mediaPlayer.notifyAudioEnd('announce-chime');
+          _playMain(mgr, ann, onComplete, logPrefix);
+        },
+        onError: () => {
+          mgr.card.mediaPlayer.notifyAudioEnd('announce-chime');
+          _playMain(mgr, ann, onComplete, logPrefix);
+        },
+        onStart: () => {
+          mgr.log.log(logPrefix, 'Announcement chime playing');
+          mgr.card.mediaPlayer.notifyAudioStart('announce-chime');
+        },
       });
     }
   }
@@ -230,21 +249,24 @@ export function clearNotificationUI(mgr) {
  */
 export function playMediaFor(mgr, urlPath, logPrefix, onDone) {
   const url = buildMediaUrl(urlPath);
-  const volume = mgr.card.config.tts_volume / 100;
+  const volume = mgr.card.mediaPlayer.volume;
 
   mgr.currentAudio = playMediaUrl(url, volume, {
     onEnd: () => {
       mgr.log.log(logPrefix, 'Media playback complete');
       mgr.currentAudio = null;
+      mgr.card.mediaPlayer.notifyAudioEnd('notification');
       onDone?.();
     },
     onError: (e) => {
       mgr.log.error(logPrefix, `Media playback error: ${e}`);
       mgr.currentAudio = null;
+      mgr.card.mediaPlayer.notifyAudioEnd('notification');
       onDone?.();
     },
     onStart: () => {
       mgr.log.log(logPrefix, 'Media playback started');
+      mgr.card.mediaPlayer.notifyAudioStart('notification');
     },
   });
 }

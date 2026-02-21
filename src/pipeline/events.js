@@ -77,6 +77,8 @@ export function handleWakeWordEnd(mgr, eventData) {
   mgr.retryCount = 0;
   mgr.card.ui.clearErrorBar();
 
+  mgr.card.mediaPlayer.interrupt();
+
   const { tts } = mgr.card;
   if (tts.isPlaying) {
     tts.stop();

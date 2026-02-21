@@ -55,16 +55,25 @@ export class TtsManager {
       return;
     }
 
-    // Browser playback
-    this._playbackWatchdog = setTimeout(() => {
-      this._playbackWatchdog = null;
-      if (this._playing && this._currentAudio) {
-        this._log.log('tts', 'Playback watchdog fired — forcing completion');
-        this._onComplete();
+    // Browser playback — watchdog checks audio is progressing
+    this._lastWatchdogTime = 0;
+    this._playbackWatchdog = setInterval(() => {
+      if (!this._playing || !this._currentAudio) {
+        this._clearWatchdog();
+        return;
       }
+      const now = this._currentAudio.currentTime;
+      if (now > this._lastWatchdogTime) {
+        this._lastWatchdogTime = now;
+        return; // Audio is progressing — all good
+      }
+      // Audio stalled — force completion
+      this._log.log('tts', 'Playback watchdog: audio stalled — forcing completion');
+      this._clearWatchdog();
+      this._onComplete();
     }, Timing.PLAYBACK_WATCHDOG);
 
-    this._currentAudio = playMediaUrl(url, config.tts_volume / 100, {
+    this._currentAudio = playMediaUrl(url, this._card.mediaPlayer.volume, {
       onEnd: () => {
         this._log.log('tts', 'Playback complete');
         this._clearWatchdog();
@@ -78,6 +87,7 @@ export class TtsManager {
       },
       onStart: () => {
         this._log.log('tts', 'Playback started successfully');
+        this._card.mediaPlayer.notifyAudioStart('tts');
       },
     });
   }
@@ -100,6 +110,7 @@ export class TtsManager {
     }
 
     stopRemote(this._card);
+    this._card.mediaPlayer.notifyAudioEnd('tts');
   }
 
   /**
@@ -121,14 +132,18 @@ export class TtsManager {
    */
   playChime(type) {
     const pattern = CHIME_MAP[type] || CHIME_DONE;
+    this._card.mediaPlayer.notifyAudioStart('chime');
     playChimeSound(this._card, pattern, this._log);
+    setTimeout(() => {
+      this._card.mediaPlayer.notifyAudioEnd('chime');
+    }, (pattern.duration || 0.3) * 1000);
   }
 
   // --- Private ---
 
   _clearWatchdog() {
     if (this._playbackWatchdog) {
-      clearTimeout(this._playbackWatchdog);
+      clearInterval(this._playbackWatchdog);
       this._playbackWatchdog = null;
     }
   }
@@ -146,6 +161,7 @@ export class TtsManager {
       this._endTimer = null;
     }
 
+    this._card.mediaPlayer.notifyAudioEnd('tts');
     this._card.onTTSComplete(playbackFailed);
   }
 }
