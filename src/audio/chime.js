@@ -43,10 +43,14 @@ export const CHIME_ANNOUNCE = {
   type: 'multi',
   wave: 'sine',
   notes: [
-    { freq: 784, start: 0, end: 0.15 },
-    { freq: 587, start: 0.18, end: 0.4 },
+    { freq: 3270, start: 0, end: 0.6 },
+    { freq: 6540, start: 0, end: 0.12 },
+    { freq: 3270, start: 0.16, end: 0.7 },
+    { freq: 6540, start: 0.16, end: 0.26 },
+    { freq: 3270, start: 0.28, end: 1.3 },
+    { freq: 6540, start: 0.28, end: 0.42 },
   ],
-  totalMs: 500,
+  totalMs: 1800,
 };
 
 export const CHIME_ALERT = {
